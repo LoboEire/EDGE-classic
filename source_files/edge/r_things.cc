@@ -825,10 +825,6 @@ void RendererWalkThing(DrawSubsector *dsub, MapObject *mo)
     if (AlmostEquals(mo->visibility_, 0.0f))
         return;
 
-    // ignore things that are mid-teleport
-    if (mo->teleport_tic_ > 0)
-        return;
-
     bool is_model = (mo->state_->flags & kStateFrameFlagModel) ? true : false;
 
     // transform the origin point
@@ -850,6 +846,7 @@ void RendererWalkThing(DrawSubsector *dsub, MapObject *mo)
         fz = mo->floor_z_;
     }
 
+    // This applies to kStateFrameFlagModel and kMapObjectFlagFloat 
     if (mo->interpolation_number_ > 1)
     {
         float along = mo->interpolation_position_ / (float)mo->interpolation_number_;
