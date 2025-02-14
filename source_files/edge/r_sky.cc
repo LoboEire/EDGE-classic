@@ -424,7 +424,8 @@ static void RenderSkyCylinder(void)
     }
     else if (fc_to_use != kRGBANoValue)
     {
-       fd_to_use *= 0.005f;
+       //fd_to_use *= 0.005f;
+       fd_to_use *= (current_sky_stretch == kSkyStretchVanilla ? 0.015f : 0.005f);
     }
 
     // Render top cap
