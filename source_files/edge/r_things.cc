@@ -864,8 +864,20 @@ void RendererWalkThing(DrawSubsector *dsub, MapObject *mo)
     float tz = tr_x * view_cosine + tr_y * view_sine;
 
     // thing is behind view plane?
-    if (clip_scope != kBAMAngle180 && tz <= 0) // && !is_model)
-        return;
+    if (!is_model)
+    {
+        if (clip_scope != kBAMAngle180 && tz <= 0)
+            return;
+    }
+    else
+    {
+        ModelDefinition *md = GetModel(mo->state_->sprite);
+        EPI_ASSERT(md);
+        if (clip_scope != kBAMAngle180 && tz < -(md->radius_ * mo->scale_))
+        {
+            return;
+        }
+    }    
 
     float tx = tr_x * view_sine - tr_y * view_cosine;
 

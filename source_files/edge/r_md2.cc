@@ -332,9 +332,10 @@ static short *CreateNormalList(uint8_t *which_normals)
     return n_list;
 }
 
-MD2Model *MD2Load(epi::File *f)
+MD2Model *MD2Load(epi::File *f, float &radius)
 {
     int i;
+    radius = 1;
 
     RawMD2Header header;
 
@@ -508,6 +509,14 @@ MD2Model *MD2Load(epi::File *f)
             }
 
             which_normals[good_V->normal_idx] = 1;
+
+            HMM_Vec3 vr = {good_V->x, good_V->y, good_V->z};
+            float    r  = HMM_Len(vr);
+
+            if (r > radius)
+            {
+                radius = r;
+            }
         }
 
         md->frames_[i].used_normals_ = CreateNormalList(which_normals);
@@ -615,8 +624,9 @@ static void MD3CreateNormalMap(void)
     md3_normal_map_built = true;
 }
 
-MD2Model *MD3Load(epi::File *f)
+MD2Model *MD3Load(epi::File *f, float &radius)
 {
+    radius = 1;
     int    i;
     float *ff;
 
@@ -747,6 +757,15 @@ MD2Model *MD3Load(epi::File *f)
             good_V->normal_idx = md3_normal_to_md2[vert.pitch >> 1][vert.yaw >> 1];
 
             which_normals[good_V->normal_idx] = 1;
+
+            HMM_Vec3 vr = {good_V->x, good_V->y, good_V->z};
+            float    r  = HMM_Len(vr);
+
+            if (r > radius)
+            {
+                radius = r;
+            }
+            
         }
 
         md->frames_[i].used_normals_ = CreateNormalList(which_normals);
