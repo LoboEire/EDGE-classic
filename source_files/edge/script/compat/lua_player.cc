@@ -945,6 +945,16 @@ static int PL_hurt_angle(lua_State *L)
     return 1;
 }
 
+
+// player.time()
+// Lobo: March 2026
+static int PL_time(lua_State *L)
+{
+    lua_pushinteger(L, level_time_elapsed / kTicRate);
+    return 1;
+}
+
+
 // player.kills()
 // Lobo: November 2021
 static int PL_kills(lua_State *L)
@@ -952,6 +962,7 @@ static int PL_kills(lua_State *L)
     lua_pushinteger(L, ui_player_who->kill_count_);
     return 1;
 }
+
 
 // player.secrets()
 // Lobo: November 2021
@@ -2496,6 +2507,7 @@ static const luaL_Reg playerlib[] = {{"num_players", PL_num_players},
                                      {"kills", PL_kills},
                                      {"secrets", PL_secrets},
                                      {"items", PL_items},
+                                     {"time", PL_time},
                                      {"map_enemies", PL_map_enemies},
                                      {"map_secrets", PL_map_secrets},
                                      {"map_items", PL_map_items},

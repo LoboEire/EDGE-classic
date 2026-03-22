@@ -966,6 +966,14 @@ static void PL_hurt_angle(coal::VM *vm, int argc)
     vm->ReturnFloat(value);
 }
 
+// player.time()
+// Lobo: March 2026
+static void PL_time(coal::VM *vm, int argc)
+{
+    EPI_UNUSED(argc);
+    vm->ReturnFloat(level_time_elapsed / kTicRate);
+}
+
 // player.kills()
 // Lobo: November 2021
 static void PL_kills(coal::VM *vm, int argc)
@@ -1749,6 +1757,7 @@ void COALRegisterPlaysim()
     ui_vm->AddNativeFunction("player.hurt_dir", PL_hurt_dir);
     ui_vm->AddNativeFunction("player.hurt_angle", PL_hurt_angle);
 
+    ui_vm->AddNativeFunction("player.time", PL_time);
     ui_vm->AddNativeFunction("player.kills", PL_kills);
     ui_vm->AddNativeFunction("player.secrets", PL_secrets);
     ui_vm->AddNativeFunction("player.items", PL_items);
