@@ -386,6 +386,7 @@ module player
 	function hurt_dir()   : float = native
 	function hurt_angle() : float = native
 	
+	function time()      : float = native
 	function kills()      : float = native
 	function secrets()      : float = native
 	function items()      : float = native
