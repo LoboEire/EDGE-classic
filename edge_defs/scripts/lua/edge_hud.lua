@@ -567,7 +567,7 @@ function edge_footsteps()
         return
     end
 
-    if (hud.game_paused() == 1) then
+    if (hud.game_paused()) then
         return
     end
 
