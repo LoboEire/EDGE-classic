@@ -21,7 +21,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 option(EDGE_SOKOL_GL "Sokol GL" OFF)
 option(EDGE_SOKOL_GLES3 "Sokol GLES3" OFF)
 option(EDGE_SOKOL_D3D11 "Sokol D3D11" OFF)
-option(EDGE_LEGACY_GL "Legacy GL Renderer" ON)
+option(EDGE_LEGACY_GL "Legacy GL Renderer" OFF)
 
 # Web Player
 option(EDGE_WEB_MULTITHREADED "Build multithreaded web player" OFF)

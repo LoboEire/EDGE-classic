@@ -201,10 +201,6 @@ set (EDGE_LINK_LIBRARIES
   stb
 )
 
-if (NOT EMSCRIPTEN OR (EMSCRIPTEN AND EDGE_WEB_MULTITHREADED))
-  list (APPEND EDGE_LINK_LIBRARIES thread)
-endif()
-
 list (APPEND
   EDGE_LINK_LIBRARIES
   coal
@@ -224,8 +220,7 @@ if (EDGE_SOKOL)
     endif()
   endif()
 else ()
-  target_include_directories(edge-classic PRIVATE ${EDGE_LIBRARY_DIR}/glad/include/glad)
-	list(APPEND EDGE_LINK_LIBRARIES glad OpenGL::GL)
+	list(APPEND EDGE_LINK_LIBRARIES OpenGL::GL)
 endif()
 
 target_link_libraries(edge-classic PRIVATE ${EDGE_LINK_LIBRARIES})
