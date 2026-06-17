@@ -26,6 +26,8 @@
 #include "AlmostEquals.h"
 #include "dm_state.h"
 #include "e_player.h"
+#include "edge_profiling.h"
+#include "gl_profiling.h"
 #include "epi.h"
 #include "i_defs_gl.h"
 #include "im_data.h"
@@ -54,12 +56,8 @@ extern ConsoleVariable cull_fog_color;
 std::unordered_map<GLuint, GLint> texture_clamp_s;
 std::unordered_map<GLuint, GLint> texture_clamp_t;
 
-// a single unit (polygon, quad, etc) to pass to the GL
 struct RendererUnit
 {
-    // unit mode (e.g. GL_TRIANGLE_FAN)
-    GLuint shape;
-
     // environment modes (GL_REPLACE, GL_MODULATE, GL_DECAL, GL_ADD)
     GLuint environment_mode[2];
 
@@ -77,6 +75,8 @@ struct RendererUnit
 
     RGBAColor fog_color   = kRGBANoValue;
     float     fog_density = 0;
+
+    uint64_t sort_key[3];
 };
 
 static RendererVertex local_verts[kMaximumLocalVertices];
@@ -139,8 +139,8 @@ void FinishUnitBatch(void)
 // contains "holes" (like sprites).  `blended' should be true if the
 // texture should be blended (like for translucent water or sprites).
 //
-RendererVertex *BeginRenderUnit(GLuint shape, int max_vert, GLuint env1, GLuint tex1, GLuint env2, GLuint tex2,
-                                int pass, BlendingMode blending, RGBAColor fog_color, float fog_density)
+RendererVertex *BeginRenderUnit(int max_vert, GLuint env1, GLuint tex1, GLuint env2, GLuint tex2, int pass,
+                                BlendingMode blending, RGBAColor fog_color, float fog_density)
 {
     if (render_backend->RenderUnitsLocked())
     {
@@ -167,7 +167,6 @@ RendererVertex *BeginRenderUnit(GLuint shape, int max_vert, GLuint env1, GLuint 
     if (env2 == kTextureEnvironmentDisable)
         tex2 = 0;
 
-    unit->shape               = shape;
     unit->environment_mode[0] = env1;
     unit->environment_mode[1] = env2;
     unit->texture[0]          = tex1;
@@ -181,6 +180,13 @@ RendererVertex *BeginRenderUnit(GLuint shape, int max_vert, GLuint env1, GLuint 
     unit->fog_density = fog_density;
 
     return local_verts + current_render_vert;
+}
+
+static inline uint8_t CompressEnvMode(GLuint env)
+{
+    if (env == (GLuint)kTextureEnvironmentDisable) return 0;
+    if (env == (GLuint)kTextureEnvironmentSkipRGB) return 1;
+    return 2;
 }
 
 //
@@ -204,6 +210,35 @@ void EndRenderUnit(int actual_vert)
 
     unit->count = actual_vert;
 
+    RGBAColor key_fog_color;
+    uint32_t  key_fog_density_bits;
+    if ((unit->blending & kBlendingNoFog) || unit->fog_color == kRGBANoValue)
+    {
+        key_fog_color        = kRGBANoValue;
+        key_fog_density_bits = 0;
+    }
+    else
+    {
+        key_fog_color = unit->fog_color;
+        memcpy(&key_fog_density_bits, &unit->fog_density, sizeof(float));
+    }
+
+    uint8_t key_alpha = ((uint32_t)unit->blending & (kBlendingLess | kBlendingGEqual))
+                            ? epi::GetRGBAAlpha(local_verts[unit->first].rgba)
+                            : 0;
+
+    unit->sort_key[0] = ((uint64_t)(uint8_t)unit->pass << 56) |
+                        ((uint64_t)(uint32_t)unit->texture[0] << 24) |
+                        ((uint64_t)(uint16_t)unit->blending << 8) |
+                        ((uint64_t)CompressEnvMode(unit->environment_mode[0]) << 6) |
+                        ((uint64_t)CompressEnvMode(unit->environment_mode[1]) << 4);
+
+    unit->sort_key[1] = ((uint64_t)(uint32_t)unit->texture[1] << 32) |
+                        ((uint64_t)(uint32_t)key_fog_color);
+
+    unit->sort_key[2] = ((uint64_t)key_fog_density_bits << 32) |
+                        ((uint64_t)key_alpha << 24);
+
     current_render_vert += actual_vert;
     current_render_unit++;
 
@@ -215,22 +250,9 @@ struct Compare_Unit_pred
 {
     inline bool operator()(const RendererUnit *A, const RendererUnit *B) const
     {
-        if (A->pass != B->pass)
-            return A->pass < B->pass;
-
-        if (A->texture[0] != B->texture[0])
-            return A->texture[0] < B->texture[0];
-
-        if (A->texture[1] != B->texture[1])
-            return A->texture[1] < B->texture[1];
-
-        if (A->environment_mode[0] != B->environment_mode[0])
-            return A->environment_mode[0] < B->environment_mode[0];
-
-        if (A->environment_mode[1] != B->environment_mode[1])
-            return A->environment_mode[1] < B->environment_mode[1];
-
-        return A->blending < B->blending;
+        if (A->sort_key[0] != B->sort_key[0]) return A->sort_key[0] < B->sort_key[0];
+        if (A->sort_key[1] != B->sort_key[1]) return A->sort_key[1] < B->sort_key[1];
+        return A->sort_key[2] < B->sort_key[2];
     }
 };
 
@@ -267,6 +289,9 @@ static void EnableCustomEnvironment(GLuint env, bool enable)
 //
 void RenderCurrentUnits(void)
 {
+    EDGE_ZoneScoped;
+    EDGE_GpuZoneScoped("RenderCurrentUnits");
+
     if (render_backend->RenderUnitsLocked())
     {
         FatalError("RenderCurrentUnits - Render units are locked");
@@ -327,10 +352,9 @@ void RenderCurrentUnits(void)
     else
         state->FogMode(GL_EXP); // if needed
 
-    for (int j = 0; j < current_render_unit; j++)
+    int j = 0;
+    while (j < current_render_unit)
     {
-        ec_frame_stats.draw_render_units++;
-
         RendererUnit *unit = local_unit_map[j];
 
         EPI_ASSERT(unit->count > 0);
@@ -369,9 +393,6 @@ void RenderCurrentUnits(void)
         {
             if (unit->blending & kBlendingLess)
             {
-                // Alpha function is updated below, because the alpha
-                // value can change from unit to unit while the
-                // kBlendingLess flag remains set.
                 state->Enable(GL_ALPHA_TEST);
             }
             else if (unit->blending & kBlendingMasked)
@@ -440,7 +461,6 @@ void RenderCurrentUnits(void)
 
         if (active_blending & kBlendingLess)
         {
-            // NOTE: assumes alpha is constant over whole polygon
             float a = epi::GetRGBAAlpha(local_verts[unit->first].rgba) / 255.0f;
             state->AlphaFunction(GL_GREATER, a * 0.66f);
         }
@@ -540,17 +560,37 @@ void RenderCurrentUnits(void)
             }
         }
 
-        glBegin(unit->shape);
-
-        const RendererVertex *V = local_verts + unit->first;
-
-        for (int v_idx = 0, v_last_idx = unit->count; v_idx < v_last_idx; v_idx++, V++)
+        // Extend the run: consecutive units that share all GL state can be
+        // merged into one glBegin/glEnd, eliminating redundant draw calls.
+        // The sort_key encodes every batch-relevant field losslessly, so
+        // equality on all three words is a sufficient condition.
+        int run_end = j + 1;
+        while (run_end < current_render_unit)
         {
-            state->GLColor(V->rgba);
-            state->MultiTexCoord(GL_TEXTURE0, &V->texture_coordinates[0]);
-            state->MultiTexCoord(GL_TEXTURE1, &V->texture_coordinates[1]);
-            // vertex must be last
-            glVertex3fv((const GLfloat *)(&V->position));
+            const RendererUnit *next = local_unit_map[run_end];
+            if (next->sort_key[0] != unit->sort_key[0] ||
+                next->sort_key[1] != unit->sort_key[1] ||
+                next->sort_key[2] != unit->sort_key[2])
+                break;
+            run_end++;
+        }
+
+        ec_frame_stats.draw_render_units += run_end - j;
+
+        glBegin(GL_TRIANGLES);
+
+        for (int k = j; k < run_end; k++)
+        {
+            const RendererVertex *V     = local_verts + local_unit_map[k]->first;
+            const int             count = local_unit_map[k]->count;
+            for (int v = 0; v < count; v++, V++)
+            {
+                state->GLColor(V->rgba);
+                state->MultiTexCoord(GL_TEXTURE0, &V->texture_coordinates[0]);
+                state->MultiTexCoord(GL_TEXTURE1, &V->texture_coordinates[1]);
+                // vertex must be last
+                glVertex3fv((const GLfloat *)(&V->position));
+            }
         }
 
         glEnd();
@@ -564,6 +604,8 @@ void RenderCurrentUnits(void)
         {
             state->TextureWrapT(old_clamp_t);
         }
+
+        j = run_end;
     }
 
     // all done

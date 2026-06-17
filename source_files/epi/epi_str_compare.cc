@@ -18,7 +18,6 @@
 
 #include "epi_str_compare.h"
 
-#include <ctype.h>
 #include <string.h>
 
 #include "epi.h"
@@ -29,30 +28,15 @@ namespace epi
 
 int StringCompare(std::string_view A, std::string_view B)
 {
-    size_t        A_pos = 0;
-    size_t        B_pos = 0;
-    size_t        A_end = A.size();
-    size_t        B_end = B.size();
-    unsigned char AC;
-    unsigned char BC;
-
-    for (;; A_pos++, B_pos++)
-    {
-        if (A_pos >= A_end)
-            AC = 0;
-        else
-            AC = (int)(unsigned char)A[A_pos];
-        if (B_pos >= B_end)
-            BC = 0;
-        else
-            BC = (int)(unsigned char)B[B_pos];
-
-        if (AC != BC)
-            return AC - BC;
-
-        if (A_pos == A_end)
-            return 0;
-    }
+    size_t min_len = A.size() < B.size() ? A.size() : B.size();
+    int    result  = memcmp(A.data(), B.data(), min_len);
+    if (result != 0)
+        return result;
+    if (A.size() < B.size())
+        return -1;
+    if (A.size() > B.size())
+        return 1;
+    return 0;
 }
 
 //----------------------------------------------------------------------------
@@ -60,66 +44,32 @@ int StringCompare(std::string_view A, std::string_view B)
 int StringCompareMax(std::string_view A, std::string_view B, size_t n)
 {
     EPI_ASSERT(n != 0);
-    size_t        A_pos = 0;
-    size_t        B_pos = 0;
-    size_t        A_end = A.size();
-    size_t        B_end = B.size();
-    unsigned char AC;
-    unsigned char BC;
-
-    for (;; A_pos++, B_pos++)
-    {
-        if (n == 0)
-            return 0;
-
-        if (A_pos >= A_end)
-            AC = 0;
-        else
-            AC = (int)(unsigned char)A[A_pos];
-        if (B_pos >= B_end)
-            BC = 0;
-        else
-            BC = (int)(unsigned char)B[B_pos];
-
-        if (AC != BC)
-            return AC - BC;
-
-        if (A_pos == A_end)
-            return 0;
-
-        n--;
-    }
+    size_t a_len   = A.size() < n ? A.size() : n;
+    size_t b_len   = B.size() < n ? B.size() : n;
+    size_t min_len = a_len < b_len ? a_len : b_len;
+    int    result  = memcmp(A.data(), B.data(), min_len);
+    if (result != 0)
+        return result;
+    if (a_len < b_len)
+        return -1;
+    if (a_len > b_len)
+        return 1;
+    return 0;
 }
 
 //----------------------------------------------------------------------------
 
 int StringCaseCompareASCII(std::string_view A, std::string_view B)
 {
-    size_t        A_pos = 0;
-    size_t        B_pos = 0;
-    size_t        A_end = A.size();
-    size_t        B_end = B.size();
-    unsigned char AC;
-    unsigned char BC;
+    size_t A_pos = 0;
+    size_t B_pos = 0;
+    size_t A_end = A.size();
+    size_t B_end = B.size();
 
     for (;; A_pos++, B_pos++)
     {
-        if (A_pos >= A_end)
-            AC = 0;
-        else
-        {
-            AC = (int)(unsigned char)A[A_pos];
-            if (AC > '@' && AC < '[')
-                AC ^= 0x20;
-        }
-        if (B_pos >= B_end)
-            BC = 0;
-        else
-        {
-            BC = (int)(unsigned char)B[B_pos];
-            if (BC > '@' && BC < '[')
-                BC ^= 0x20;
-        }
+        unsigned char AC = A_pos < A_end ? (unsigned char)ToLowerASCII((unsigned char)A[A_pos]) : 0;
+        unsigned char BC = B_pos < B_end ? (unsigned char)ToLowerASCII((unsigned char)B[B_pos]) : 0;
 
         if (AC != BC)
             return AC - BC;
@@ -134,34 +84,18 @@ int StringCaseCompareASCII(std::string_view A, std::string_view B)
 int StringCaseCompareMaxASCII(std::string_view A, std::string_view B, size_t n)
 {
     EPI_ASSERT(n != 0);
-    size_t        A_pos = 0;
-    size_t        B_pos = 0;
-    size_t        A_end = A.size();
-    size_t        B_end = B.size();
-    unsigned char AC;
-    unsigned char BC;
+    size_t A_pos = 0;
+    size_t B_pos = 0;
+    size_t A_end = A.size();
+    size_t B_end = B.size();
 
     for (;; A_pos++, B_pos++)
     {
         if (n == 0)
             return 0;
 
-        if (A_pos >= A_end)
-            AC = 0;
-        else
-        {
-            AC = (int)(unsigned char)A[A_pos];
-            if (AC > '@' && AC < '[')
-                AC ^= 0x20;
-        }
-        if (B_pos >= B_end)
-            BC = 0;
-        else
-        {
-            BC = (int)(unsigned char)B[B_pos];
-            if (BC > '@' && BC < '[')
-                BC ^= 0x20;
-        }
+        unsigned char AC = A_pos < A_end ? (unsigned char)ToLowerASCII((unsigned char)A[A_pos]) : 0;
+        unsigned char BC = B_pos < B_end ? (unsigned char)ToLowerASCII((unsigned char)B[B_pos]) : 0;
 
         if (AC != BC)
             return AC - BC;
@@ -177,61 +111,27 @@ int StringCaseCompareMaxASCII(std::string_view A, std::string_view B, size_t n)
 
 int StringPrefixCompare(std::string_view A, std::string_view B)
 {
-    size_t        A_pos = 0;
-    size_t        B_pos = 0;
-    size_t        A_end = A.size();
-    size_t        B_end = B.size();
-    unsigned char AC;
-    unsigned char BC;
-
-    for (;; A_pos++, B_pos++)
+    if (A.size() < B.size())
     {
-        if (A_pos >= A_end)
-            AC = 0;
-        else
-            AC = (int)(unsigned char)A[A_pos];
-        if (B_pos >= B_end)
-            BC = 0;
-        else
-            BC = (int)(unsigned char)B[B_pos];
-
-        if (B_pos == B_end)
-            return 0;
-
-        if (AC != BC)
-            return AC - BC;
+        int result = memcmp(A.data(), B.data(), A.size());
+        return result != 0 ? result : -1;
     }
+    return memcmp(A.data(), B.data(), B.size());
 }
 
 //----------------------------------------------------------------------------
 
 int StringPrefixCaseCompareASCII(std::string_view A, std::string_view B)
 {
-    size_t        A_pos = 0;
-    size_t        B_pos = 0;
-    size_t        A_end = A.size();
-    size_t        B_end = B.size();
-    unsigned char AC    = 0;
-    unsigned char BC    = 0;
+    size_t A_pos = 0;
+    size_t B_pos = 0;
+    size_t A_end = A.size();
+    size_t B_end = B.size();
 
     for (;; A_pos++, B_pos++)
     {
-        if (A_pos >= A_end)
-            AC = 0;
-        else
-        {
-            AC = (int)(unsigned char)A[A_pos];
-            if (AC > '@' && AC < '[')
-                AC ^= 0x20;
-        }
-        if (B_pos >= B_end)
-            BC = 0;
-        else
-        {
-            BC = (int)(unsigned char)B[B_pos];
-            if (BC > '@' && BC < '[')
-                BC ^= 0x20;
-        }
+        unsigned char AC = A_pos < A_end ? (unsigned char)ToLowerASCII((unsigned char)A[A_pos]) : 0;
+        unsigned char BC = B_pos < B_end ? (unsigned char)ToLowerASCII((unsigned char)B[B_pos]) : 0;
 
         if (B_pos == B_end)
             return 0;

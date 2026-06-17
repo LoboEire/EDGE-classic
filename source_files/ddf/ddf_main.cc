@@ -2101,7 +2101,7 @@ static ddf_reader_t ddf_readers[kTotalDDFTypes] = {
     // RTS scripts are handled differently
     {kDDFTypeRadScript, "RSCRIPT", "rscript.rts", "RadTrig", nullptr}};
 
-DDFType DDFLumpToType(const std::string &name)
+DDFType DDFLumpToType(std::string_view name)
 {
     std::string up_name(name);
     epi::StringUpperASCII(up_name);
@@ -2113,7 +2113,7 @@ DDFType DDFLumpToType(const std::string &name)
     return kDDFTypeUnknown;
 }
 
-DDFType DDFFilenameToType(const std::string &path)
+DDFType DDFFilenameToType(std::string_view path)
 {
     std::string check = epi::GetExtension(path);
 

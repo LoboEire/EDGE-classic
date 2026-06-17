@@ -31,6 +31,7 @@
 #include "coal.h"
 #include "dm_defs.h"
 #include "dm_state.h"
+#include "edge_profiling.h"
 #include "epi_color.h"
 #include "epi_file.h"
 #include "epi_filesystem.h"
@@ -49,8 +50,7 @@
 #include "r_effects.h"
 #include "r_gldefs.h"
 #include "r_image.h"
-#include "r_md2.h"
-#include "r_mdl.h"
+#include "r_model.h"
 #include "r_mirror.h"
 #include "r_misc.h"
 #include "r_modes.h"
@@ -563,19 +563,14 @@ static void RenderPSprite(PlayerSprite *psp, int which, Player *player, RegionPr
 
         GLuint fuzz_tex = is_fuzzy ? ImageCache(fuzz_image, false) : 0;
 
-        RendererVertex *glvert =
-            BeginRenderUnit(GL_POLYGON, 4, is_additive ? (GLuint)kTextureEnvironmentSkipRGB : GL_MODULATE, tex_id,
-                            is_fuzzy ? GL_MODULATE : (GLuint)kTextureEnvironmentDisable, fuzz_tex, pass, blending,
-                            pass > 0 ? kRGBANoValue : fc_to_use, fd_to_use);
+        RendererVertex temp[4];
 
         for (int v_idx = 0; v_idx < 4; v_idx++)
         {
-            RendererVertex *dest = glvert + v_idx;
+            RendererVertex *dest = temp + v_idx;
 
             dest->position               = data.vertices[v_idx];
             dest->texture_coordinates[0] = data.texture_coordinates[v_idx];
-
-            dest->normal = {{0, 0, 1}};
 
             if (is_fuzzy)
             {
@@ -606,7 +601,19 @@ static void RenderPSprite(PlayerSprite *psp, int which, Player *player, RegionPr
             epi::SetRGBAAlpha(dest->rgba, trans);
         }
 
-        EndRenderUnit(4);
+        RendererVertex *glvert =
+            BeginRenderUnit(6, is_additive ? (GLuint)kTextureEnvironmentSkipRGB : GL_MODULATE, tex_id,
+                            is_fuzzy ? GL_MODULATE : (GLuint)kTextureEnvironmentDisable, fuzz_tex, pass, blending,
+                            pass > 0 ? kRGBANoValue : fc_to_use, fd_to_use);
+
+        glvert[0] = temp[0];
+        glvert[1] = temp[1];
+        glvert[2] = temp[2];
+        glvert[3] = temp[0];
+        glvert[4] = temp[2];
+        glvert[5] = temp[3];
+
+        EndRenderUnit(6);
     }
 
     FinishUnitBatch();
@@ -643,22 +650,26 @@ static void DrawStdCrossHair(void)
     StartUnitBatch(false);
 
     RendererVertex *glvert =
-        BeginRenderUnit(GL_POLYGON, 4, GL_MODULATE, tex_id, (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingAdd);
+        BeginRenderUnit(6, GL_MODULATE, tex_id, (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingAdd);
 
+    RendererVertex *v0               = glvert;
     glvert->rgba                     = unit_col;
     glvert->position                 = {{x - w, y - w, 0.0f}};
     glvert++->texture_coordinates[0] = {{0.0f, 0.0f}};
     glvert->rgba                     = unit_col;
     glvert->position                 = {{x - w, y + w, 0.0f}};
     glvert++->texture_coordinates[0] = {{0.0f, 1.0f}};
+    RendererVertex *v2               = glvert;
     glvert->rgba                     = unit_col;
     glvert->position                 = {{x + w, y + w, 0.0f}};
     glvert++->texture_coordinates[0] = {{1.0f, 1.0f}};
+    *glvert++                        = *v0;
+    *glvert++                        = *v2;
     glvert->rgba                     = unit_col;
     glvert->position                 = {{x + w, y - w, 0.0f}};
-    glvert++->texture_coordinates[0] = {{1.0f, 0.0f}};
+    glvert->texture_coordinates[0]   = {{1.0f, 0.0f}};
 
-    EndRenderUnit(4);
+    EndRenderUnit(6);
 
     FinishUnitBatch();
 }
@@ -752,7 +763,7 @@ void RenderWeaponModel(Player *p)
 
     const Image *skin_img = md->skins_[skin_num];
 
-    if (!skin_img && md->md2_model_)
+    if (!skin_img && md->model_->skin_id_list_.empty())
     {
         skin_img = ImageForDummySkin();
     }
@@ -817,12 +828,8 @@ void RenderWeaponModel(Player *p)
     bias /= 5;
     bias += w->model_bias_;
 
-    if (md->md2_model_)
-        MD2RenderModel(md->md2_model_, skin_img, true, last_frame, psp->state->frame, lerp, x, y, z, p->map_object_,
-                       view_properties, 1.0f /* scale */, w->model_aspect_, bias, w->model_rotate_);
-    else if (md->mdl_model_)
-        MDLRenderModel(md->mdl_model_, true, last_frame, psp->state->frame, lerp, x, y, z, p->map_object_,
-                       view_properties, 1.0f /* scale */, w->model_aspect_, bias, w->model_rotate_);
+    RenderModel(md->model_, skin_img, true, last_frame, psp->state->frame, lerp, x, y, z, p->map_object_,
+                view_properties, 1.0f, w->model_aspect_, bias, w->model_rotate_);
 }
 
 // ============================================================================
@@ -952,6 +959,8 @@ static void RendererClipSpriteVertically(DrawSubsector *dsub, DrawThing *dthing)
 
 void BSPWalkThing(DrawSubsector *dsub, MapObject *mo)
 {
+    EDGE_ZoneScoped;
+
     /* Visit a single thing that exists in the current subsector */
 
     EPI_ASSERT(mo->state_);
@@ -1115,15 +1124,16 @@ void BSPWalkThing(DrawSubsector *dsub, MapObject *mo)
 
 static void RenderModel(DrawThing *dthing)
 {
+    EDGE_ZoneScoped;
+
     MapObject *mo = dthing->map_object;
 
     ModelDefinition *md = GetModel(mo->state_->sprite);
 
     const Image *skin_img = md->skins_[mo->model_skin_];
 
-    if (!skin_img && md->md2_model_)
+    if (!skin_img && md->model_->skin_id_list_.empty())
     {
-        // LogDebug("Render model: no skin %d\n", mo->model_skin);
         skin_img = ImageForDummySkin();
     }
 
@@ -1146,14 +1156,9 @@ static void RenderModel(DrawThing *dthing)
         lerp = HMM_Clamp(0, lerp, 1);
     }
 
-    if (md->md2_model_)
-        MD2RenderModel(md->md2_model_, skin_img, false, last_frame, mo->state_->frame, lerp, dthing->map_x,
-                       dthing->map_y, z, mo, mo->region_properties_, mo->model_scale_, mo->model_aspect_,
-                       mo->info_->model_bias_, mo->info_->model_rotate_);
-    else if (md->mdl_model_)
-        MDLRenderModel(md->mdl_model_, false, last_frame, mo->state_->frame, lerp, dthing->map_x, dthing->map_y, z, mo,
-                       mo->region_properties_, mo->model_scale_, mo->model_aspect_, mo->info_->model_bias_,
-                       mo->info_->model_rotate_);
+    RenderModel(md->model_, skin_img, false, last_frame, mo->state_->frame, lerp, dthing->map_x, dthing->map_y, z, mo,
+                mo->region_properties_, mo->model_scale_, mo->model_aspect_, mo->info_->model_bias_,
+                mo->info_->model_rotate_);
 }
 
 struct ThingCoordinateData
@@ -1186,6 +1191,8 @@ static void DLIT_Thing(MapObject *mo, void *dataptr)
 
 static bool RenderThing(DrawThing *dthing, bool solid)
 {
+    EDGE_ZoneScoped;
+
     ec_frame_stats.draw_things++;
 
     if (dthing->is_model)
@@ -1500,18 +1507,14 @@ static bool RenderThing(DrawThing *dthing, bool solid)
 
         GLuint fuzz_tex = is_fuzzy ? ImageCache(fuzz_image, false) : 0;
 
-        RendererVertex *glvert =
-            BeginRenderUnit(GL_POLYGON, 4, is_additive ? (GLuint)kTextureEnvironmentSkipRGB : GL_MODULATE, tex_id,
-                            is_fuzzy ? GL_MODULATE : (GLuint)kTextureEnvironmentDisable, fuzz_tex, pass, blending,
-                            pass > 0 ? kRGBANoValue : fc_to_use, fd_to_use);
+        RendererVertex temp[4];
 
         for (int v_idx = 0; v_idx < 4; v_idx++)
         {
-            RendererVertex *dest = glvert + v_idx;
+            RendererVertex *dest = temp + v_idx;
 
             dest->position               = data.vertices[v_idx];
             dest->texture_coordinates[0] = data.texture_coordinates[v_idx];
-            dest->normal                 = data.normal;
 
             if (is_fuzzy)
             {
@@ -1543,7 +1546,19 @@ static bool RenderThing(DrawThing *dthing, bool solid)
             epi::SetRGBAAlpha(dest->rgba, trans);
         }
 
-        EndRenderUnit(4);
+        RendererVertex *glvert =
+            BeginRenderUnit(6, is_additive ? (GLuint)kTextureEnvironmentSkipRGB : GL_MODULATE, tex_id,
+                            is_fuzzy ? GL_MODULATE : (GLuint)kTextureEnvironmentDisable, fuzz_tex, pass, blending,
+                            pass > 0 ? kRGBANoValue : fc_to_use, fd_to_use);
+
+        glvert[0] = temp[0];
+        glvert[1] = temp[1];
+        glvert[2] = temp[2];
+        glvert[3] = temp[0];
+        glvert[4] = temp[2];
+        glvert[5] = temp[3];
+
+        EndRenderUnit(6);
     }
 
     return solid;
@@ -1574,6 +1589,8 @@ bool RenderThings(DrawFloor *dfloor, bool solid)
     //
     // -ACB- 2004/08/17
     //
+
+    EDGE_ZoneScoped;
 
     DrawThing *head_dt;
 

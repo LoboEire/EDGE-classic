@@ -156,8 +156,8 @@ void        DDFBoomClearGeneralizedTypes(void);
 LineType   *DDFBoomGetGeneralizedLine(int number);
 SectorType *DDFBoomGetGeneralizedSector(int number);
 
-DDFType DDFLumpToType(const std::string &name);
-DDFType DDFFilenameToType(const std::string &path);
+DDFType DDFLumpToType(std::string_view name);
+DDFType DDFFilenameToType(std::string_view path);
 
 void DDFAddFile(DDFType type, std::string &data, const std::string &source);
 void DDFAddCollection(std::vector<DDFFile> &col, const std::string &source);

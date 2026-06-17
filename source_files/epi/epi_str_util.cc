@@ -280,7 +280,6 @@ static bool CodepointToUTF8(uint32_t cp, char *_dst, uint64_t *_len)
         } /* else if */
     } /* else */
 
-    _dst  = dst;
     *_len = len;
     if (cp == kBadUnicodeValue)
         return false;
@@ -372,69 +371,59 @@ std::string WStringToUTF8(std::wstring_view instring)
 void StringLowerASCII(std::string &s)
 {
     for (char &ch : s)
-    {
-        if (ch > '@' && ch < '[')
-            ch ^= 0x20;
-    }
+        ch = (char)ToLowerASCII((unsigned char)ch);
 }
 void StringUpperASCII(std::string &s)
 {
     for (char &ch : s)
-    {
-        if (ch > '`' && ch < '{')
-            ch ^= 0x20;
-    }
+        ch = (char)ToUpperASCII((unsigned char)ch);
 }
 
 void TextureNameFromFilename(std::string &buf, std::string_view stem)
 {
-    size_t pos = 0;
-
     buf.clear();
+    buf.reserve(stem.size());
 
-    while (pos < stem.size())
+    for (char c : stem)
     {
-        int ch = (unsigned char)stem[pos++];
-
-        // remap caret --> backslash
+        unsigned char ch = (unsigned char)c;
         if (ch == '^')
-            ch = '\\';
-        else if (ch > '`' && ch < '{')
-            ch ^= 0x20;
-
-        buf.push_back((char)ch);
+            buf.push_back('\\');
+        else
+            buf.push_back((char)ToUpperASCII(ch));
     }
 }
 
 std::string StringFormat(const char *fmt, ...)
 {
-    /* Algorithm: keep doubling the allocated buffer size
-     * until the output fits. Based on code by Darren Salt.
-     */
-    int buf_size = 128;
+    char    stack_buf[128];
+    va_list args;
+
+    va_start(args, fmt);
+    int out_len = stbsp_vsnprintf(stack_buf, (int)sizeof(stack_buf), fmt, args);
+    va_end(args);
+
+    if (out_len >= 0 && out_len < (int)sizeof(stack_buf))
+        return std::string(stack_buf);
+
+    int buf_size = 256;
 
     for (;;)
     {
         char *buf = new char[buf_size];
 
-        va_list args;
-
         va_start(args, fmt);
-        int out_len = stbsp_vsnprintf(buf, buf_size, fmt, args);
+        out_len = stbsp_vsnprintf(buf, buf_size, fmt, args);
         va_end(args);
 
-        // old versions of stbsp_vsnprintf() simply return -1 when
-        // the output doesn't fit.
         if (out_len >= 0 && out_len < buf_size)
         {
             std::string result(buf);
             delete[] buf;
-
             return result;
         }
 
         delete[] buf;
-
         buf_size *= 2;
     }
 }
@@ -447,7 +436,7 @@ std::vector<std::string> SeparatedStringVector(std::string_view str, char separa
     while (pos != std::string_view::npos)
     {
         pos = str.find(separator, oldpos);
-        std::string sub_string(str.substr(oldpos, (pos == std::string::npos ? str.size() : pos) - oldpos));
+        std::string sub_string(str.substr(oldpos, (pos == std::string_view::npos ? str.size() : pos) - oldpos));
         if (!sub_string.empty())
             vec.push_back(sub_string);
         if (pos != std::string_view::npos)
@@ -496,7 +485,7 @@ char *CStringDuplicate(const char *original, int limit)
         return s;
     }
 
-    char *s = CStringNew(limit + 1);
+    char *s = CStringNew(limit);
     strncpy(s, original, limit);
     s[limit] = 0;
 

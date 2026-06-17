@@ -67,8 +67,8 @@ int CheckLumpNumberForName(const char *name);
 int CheckDataFileIndexForName(const char *name);
 
 int CheckGraphicLumpNumberForName(const char *name);
-int CheckXGLLumpNumberForName(const char *name);
 int CheckMapLumpNumberForName(const char *name);
+
 int CheckPatchLumpNumberForName(const char *name);
 
 // Unlike check, will FatalError if not present
@@ -108,7 +108,6 @@ bool IsLumpInAnyWad(const char *name);
 // Returns index into game_checker vector if valid game found, else -1
 int CheckForUniqueGameLumps(epi::File *file);
 
-void BuildXGLNodes(void);
 void ReadUMAPINFOLumps(void);
 
 int GetKindForLump(int lump);

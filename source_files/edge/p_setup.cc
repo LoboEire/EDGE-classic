@@ -37,7 +37,6 @@
 #include "dm_state.h"
 #include "e_main.h"
 #include "epi_crc.h"
-#include "epi_doomdefs.h"
 #include "epi_endian.h"
 #include "epi_scanner.h"
 #include "epi_str_compare.h"
@@ -50,7 +49,6 @@
 #include "m_math.h"
 #include "m_misc.h"
 #include "m_random.h"
-#include "miniz.h" // ZGL3 nodes
 #include "p_local.h"
 #include "r_gldefs.h"
 #include "r_image.h"
@@ -58,6 +56,7 @@
 #include "r_sky.h"
 #include "rad_trig.h" // MUSINFO changers
 #include "s_music.h"
+#include "bsp.h"
 #include "s_sound.h"
 #include "sv_main.h"
 #include "w_files.h"
@@ -81,7 +80,7 @@ EDGE_DEFINE_CONSOLE_VARIABLE(udmf_strict_namespace, "1", kConsoleVariableFlagArc
 
 int                 total_level_vertexes;
 Vertex             *level_vertexes = nullptr;
-static Vertex      *level_gl_vertexes;
+Vertex             *level_gl_vertexes;
 int                 total_level_segs;
 Seg                *level_segs;
 int                 total_level_sectors;
@@ -344,71 +343,6 @@ static void LoadVertexes(int lump)
     delete[] data;
 }
 
-static void SegCommonStuff(Seg *seg, int linedef_in)
-{
-    seg->front_sector = seg->back_sector = nullptr;
-
-    if (linedef_in == -1)
-    {
-        seg->miniseg = true;
-    }
-    else
-    {
-        if (linedef_in >= total_level_lines) // sanity check
-            FatalError("Bad GWA file: seg #%d has invalid linedef.\n", (int)(seg - level_segs));
-
-        seg->miniseg = false;
-        seg->linedef = &level_lines[linedef_in];
-
-        float sx = seg->side ? seg->linedef->vertex_2->X : seg->linedef->vertex_1->X;
-        float sy = seg->side ? seg->linedef->vertex_2->Y : seg->linedef->vertex_1->Y;
-
-        seg->offset = PointToDistance(sx, sy, seg->vertex_1->X, seg->vertex_1->Y);
-
-        seg->sidedef = seg->linedef->side[seg->side];
-
-        if (!seg->sidedef)
-            FatalError("Bad GWA file: missing side for seg #%d\n", (int)(seg - level_segs));
-
-        seg->front_sector = seg->sidedef->sector;
-
-        if (seg->linedef->flags & kLineFlagTwoSided)
-        {
-            Side *other = seg->linedef->side[seg->side ^ 1];
-
-            if (other)
-                seg->back_sector = other->sector;
-        }
-    }
-}
-
-//
-// GroupSectorTags
-//
-// Called during P_LoadSectors to set the tag_next & tag_previous fields of
-// each sector_t, which keep all sectors with the same tag in a linked
-// list for faster handling.
-//
-// -AJA- 1999/07/29: written.
-//
-static void GroupSectorTags(Sector *dest, Sector *seclist, int numsecs)
-{
-    // NOTE: `numsecs' does not include the current sector.
-
-    dest->tag_next = dest->tag_previous = nullptr;
-
-    for (; numsecs > 0; numsecs--)
-    {
-        Sector *src = &seclist[numsecs - 1];
-
-        if (src->tag == dest->tag)
-        {
-            src->tag_next      = dest;
-            dest->tag_previous = src;
-            return;
-        }
-    }
-}
 
 static void LoadSectors(int lump)
 {
@@ -439,6 +373,7 @@ static void LoadSectors(int lump)
     CheckDoom2Map05Bug((uint8_t *)data, GetLumpLength(lump)); // Lobo: 2023
     ms = (const RawSector *)data;
     ss = level_sectors;
+    std::unordered_map<int, Sector *> tag_map;
     for (i = 0; i < total_level_sectors; i++, ss++, ms++)
     {
         char buffer[10];
@@ -526,8 +461,15 @@ static void LoadSectors(int lump)
         ss->old_ceiling_height          = ss->ceiling_height;
         ss->interpolated_ceiling_height = ss->ceiling_height;
 
-        // -AJA- 1999/07/29: Keep sectors with same tag in a list.
-        GroupSectorTags(ss, level_sectors, i);
+        {
+            Sector *&chain_tail = tag_map[ss->tag];
+            if (chain_tail != nullptr)
+            {
+                chain_tail->tag_next = ss;
+                ss->tag_previous     = chain_tail;
+            }
+            chain_tail = ss;
+        }
     }
 
     delete[] data;
@@ -543,7 +485,6 @@ static void SetupRootNode(void)
     {
         root_node = kLeafSubsector | 0;
 
-        // compute bbox for the single subsector
         BoundingBoxClear(dummy_bounding_box);
 
         int  i;
@@ -554,6 +495,8 @@ static void SetupRootNode(void)
             BoundingBoxAddPoint(dummy_bounding_box, seg->vertex_1->X, seg->vertex_1->Y);
             BoundingBoxAddPoint(dummy_bounding_box, seg->vertex_2->X, seg->vertex_2->Y);
         }
+
+        level_subsectors[0].bounding_box = dummy_bounding_box;
     }
 }
 
@@ -925,6 +868,14 @@ static void LoadLineDefs(int lump)
     const uint8_t *data = LoadLumpIntoMemory(lump);
     map_lines_crc.AddBlock((const uint8_t *)data, GetLumpLength(lump));
 
+    std::unordered_map<int, std::vector<int>> sector_tag_map;
+    for (int t = 0; t < total_level_sectors; t++)
+    {
+        int tag = level_sectors[t].tag;
+        if (tag > 0)
+            sector_tag_map[tag].push_back(t);
+    }
+
     Line             *ld  = level_lines;
     const RawLinedef *mld = (const RawLinedef *)data;
 
@@ -967,18 +918,16 @@ static void LoadLineDefs(int lump)
 
         ComputeLinedefData(ld, side0, side1);
 
-        // check for possible extrafloors, updating the extrafloor_maximum count
-        // for the sectors in question.
-
         if (ld->tag && ld->special && ld->special->ef_.type_)
         {
-            for (int j = 0; j < total_level_sectors; j++)
+            auto it = sector_tag_map.find(ld->tag);
+            if (it != sector_tag_map.end())
             {
-                if (level_sectors[j].tag != ld->tag)
-                    continue;
-
-                level_sectors[j].extrafloor_maximum++;
-                total_level_extrafloors++;
+                for (int j : it->second)
+                {
+                    level_sectors[j].extrafloor_maximum++;
+                    total_level_extrafloors++;
+                }
             }
         }
 
@@ -1084,291 +1033,6 @@ static void AssignSubsectorsToSectors()
     // the above *should* handle everything, so this pass is only needed
     // for extremely broken nodes or maps.
     AssignSubsectorsPass(2);
-}
-
-// Adapted from EDGE 2.X's ZNode loading routine; only handles XGL3/ZGL3 as that
-// is all our built-in AJBSP produces now
-static void LoadXGL3Nodes(int lumpnum)
-{
-    int                  i, xglen = 0;
-    uint8_t             *xgldata = nullptr;
-    std::vector<uint8_t> zgldata;
-    uint8_t             *td = nullptr;
-
-    LogDebug("LoadXGL3Nodes:\n");
-
-    xglen   = GetLumpLength(lumpnum);
-    xgldata = (uint8_t *)LoadLumpIntoMemory(lumpnum);
-    if (!xgldata)
-        FatalError("LoadXGL3Nodes: Couldn't load lump\n");
-
-    if (xglen < 12)
-    {
-        delete[] xgldata;
-        FatalError("LoadXGL3Nodes: Lump too short\n");
-    }
-
-    if (!memcmp(xgldata, "XGL3", 4))
-        LogDebug(" AJBSP uncompressed GL nodes v3\n");
-    else if (!memcmp(xgldata, "ZGL3", 4))
-    {
-        LogDebug(" AJBSP compressed GL nodes v3\n");
-        zgldata.resize(xglen);
-        z_stream zgl_stream;
-        EPI_CLEAR_MEMORY(&zgl_stream, z_stream, 1);
-        zgl_stream.next_in   = &xgldata[4];
-        zgl_stream.avail_in  = xglen - 4;
-        zgl_stream.next_out  = zgldata.data();
-        zgl_stream.avail_out = zgldata.size();
-        inflateInit2(&zgl_stream, MZ_DEFAULT_WINDOW_BITS);
-        int inflate_status;
-        for (;;)
-        {
-            inflate_status = inflate(&zgl_stream, Z_NO_FLUSH);
-            if (inflate_status == MZ_OK || inflate_status == MZ_BUF_ERROR) // Need to resize output buffer
-            {
-                zgldata.resize(zgldata.size() * 2);
-                zgl_stream.next_out  = &zgldata[zgl_stream.total_out];
-                zgl_stream.avail_out = zgldata.size() - zgl_stream.total_out;
-            }
-            else if (inflate_status == Z_STREAM_END)
-            {
-                inflateEnd(&zgl_stream);
-                zgldata.resize(zgl_stream.total_out);
-                zgldata.shrink_to_fit();
-                break;
-            }
-            else
-                FatalError("LoadXGL3Nodes: Failed to decompress ZGL3 nodes!\n");
-        }
-    }
-    else
-    {
-        static char xgltemp[6];
-        epi::CStringCopyMax(xgltemp, (char *)xgldata, 4);
-        delete[] xgldata;
-        FatalError("LoadXGL3Nodes: Unrecognized node type %s\n", xgltemp);
-    }
-
-    if (!zgldata.empty())
-        td = zgldata.data();
-    else
-        td = &xgldata[4];
-
-    // after signature, 1st u32 is number of original vertexes - should be <=
-    // total_level_vertexes
-    int oVerts = epi::UnalignedLittleEndianU32(td);
-    td += 4;
-    if (oVerts > total_level_vertexes)
-    {
-        delete[] xgldata;
-        FatalError("LoadXGL3Nodes: Vertex/Node mismatch\n");
-    }
-
-    // 2nd u32 is the number of extra vertexes added by ajbsp
-    int nVerts = epi::UnalignedLittleEndianU32(td);
-    td += 4;
-    LogDebug("LoadXGL3Nodes: Orig Verts = %d, New Verts = %d, Map Verts = %d\n", oVerts, nVerts, total_level_vertexes);
-
-    level_gl_vertexes = new Vertex[nVerts];
-
-    // fill in new vertexes
-    Vertex *vv = level_gl_vertexes;
-    for (i = 0; i < nVerts; i++, vv++)
-    {
-        // convert signed 16.16 fixed point to float
-        vv->X = (float)epi::UnalignedLittleEndianS32(td) / 65536.0f;
-        td += 4;
-        vv->Y = (float)epi::UnalignedLittleEndianS32(td) / 65536.0f;
-        td += 4;
-        vv->Z = -40000.0f;
-        vv->W = 40000.0f;
-    }
-
-    // new vertexes is followed by the subsectors
-    total_level_subsectors = epi::UnalignedLittleEndianS32(td);
-    td += 4;
-    if (total_level_subsectors <= 0)
-    {
-        delete[] xgldata;
-        FatalError("LoadXGL3Nodes: No subsectors\n");
-    }
-    LogDebug("LoadXGL3Nodes: Num SSECTORS = %d\n", total_level_subsectors);
-
-    level_subsectors = new Subsector[total_level_subsectors];
-    EPI_CLEAR_MEMORY(level_subsectors, Subsector, total_level_subsectors);
-
-    int *ss_temp = new int[total_level_subsectors];
-    int  xglSegs = 0;
-    for (i = 0; i < total_level_subsectors; i++)
-    {
-        int countsegs = epi::UnalignedLittleEndianS32(td);
-        td += 4;
-        ss_temp[i] = countsegs;
-        xglSegs += countsegs;
-    }
-
-    // subsectors are followed by the segs
-    total_level_segs = epi::UnalignedLittleEndianS32(td);
-    td += 4;
-    if (total_level_segs != xglSegs)
-    {
-        delete[] xgldata;
-        FatalError("LoadXGL3Nodes: Incorrect number of segs in nodes\n");
-    }
-    LogDebug("LoadXGL3Nodes: Num SEGS = %d\n", total_level_segs);
-
-    level_segs = new Seg[total_level_segs];
-    EPI_CLEAR_MEMORY(level_segs, Seg, total_level_segs);
-    Seg *seg = level_segs;
-
-    for (i = 0; i < total_level_segs; i++, seg++)
-    {
-        unsigned int v1num;
-        int          slinedef, partner, side;
-
-        v1num = epi::UnalignedLittleEndianU32(td);
-        td += 4;
-        partner = epi::UnalignedLittleEndianS32(td);
-        td += 4;
-        slinedef = epi::UnalignedLittleEndianS32(td);
-        td += 4;
-        side = (int)(*td);
-        td += 1;
-
-        if (v1num < (uint32_t)oVerts)
-            seg->vertex_1 = &level_vertexes[v1num];
-        else
-            seg->vertex_1 = &level_gl_vertexes[v1num - oVerts];
-
-        seg->side = side ? 1 : 0;
-
-        if (partner == -1)
-            seg->partner = nullptr;
-        else
-        {
-            EPI_ASSERT(partner < total_level_segs); // sanity check
-            seg->partner = &level_segs[partner];
-        }
-
-        SegCommonStuff(seg, slinedef);
-
-        // The following fields are filled out elsewhere:
-        //     sub_next, front_sub, back_sub, frontsector, backsector.
-
-        seg->subsector_next  = EDGE_SEG_INVALID;
-        seg->front_subsector = seg->back_subsector = EDGE_SUBSECTOR_INVALID;
-    }
-
-    LogDebug("LoadXGL3Nodes: Post-process subsectors\n");
-    // go back and fill in subsectors
-    Subsector *ss = level_subsectors;
-    xglSegs       = 0;
-    for (i = 0; i < total_level_subsectors; i++, ss++)
-    {
-        int countsegs = ss_temp[i];
-        int firstseg  = xglSegs;
-        xglSegs += countsegs;
-
-        // go back and fill in v2 from v1 of next seg and do calcs that needed
-        // both
-        seg = &level_segs[firstseg];
-        for (int j = 0; j < countsegs; j++, seg++)
-        {
-            seg->vertex_2 =
-                j == (countsegs - 1) ? level_segs[firstseg].vertex_1 : level_segs[firstseg + j + 1].vertex_1;
-
-            seg->angle = PointToAngle(seg->vertex_1->X, seg->vertex_1->Y, seg->vertex_2->X, seg->vertex_2->Y);
-
-            seg->length = PointToDistance(seg->vertex_1->X, seg->vertex_1->Y, seg->vertex_2->X, seg->vertex_2->Y);
-        }
-
-        // -AJA- 1999/09/23: New linked list for the segs of a subsector
-        //       (part of true bsp rendering).
-        Seg **prevptr = &ss->segs;
-
-        if (countsegs == 0)
-            FatalError("LoadXGL3Nodes: level %s has invalid SSECTORS.\n", current_map->lump_.c_str());
-
-        ss->sector     = nullptr;
-        ss->thing_list = nullptr;
-
-        // this is updated when the nodes are loaded
-        ss->bounding_box = dummy_bounding_box;
-
-        for (int j = 0; j < countsegs; j++)
-        {
-            Seg *cur = &level_segs[firstseg + j];
-
-            *prevptr = cur;
-            prevptr  = &cur->subsector_next;
-
-            cur->front_subsector = ss;
-            cur->back_subsector  = nullptr;
-
-            // LogDebug("  ssec = %d, seg = %d\n", i, firstseg + j);
-        }
-        // LogDebug("LoadZNodes: ssec = %d, fseg = %d, cseg = %d\n", i,
-        // firstseg, countsegs);
-
-        *prevptr = nullptr;
-    }
-    delete[] ss_temp; // CA 9.30.18: allocated with new but released using
-                      // delete, added [] between delete and ss_temp
-
-    LogDebug("LoadXGL3Nodes: Read GL nodes\n");
-    // finally, read the nodes
-    // NOTE: no nodes is okay (a basic single sector map). -AJA-
-    total_level_nodes = epi::UnalignedLittleEndianU32(td);
-    td += 4;
-    LogDebug("LoadXGL3Nodes: Num nodes = %d\n", total_level_nodes);
-
-    level_nodes = new BSPNode[total_level_nodes + 1];
-    EPI_CLEAR_MEMORY(level_nodes, BSPNode, total_level_nodes);
-    BSPNode *nd = level_nodes;
-
-    for (i = 0; i < total_level_nodes; i++, nd++)
-    {
-        nd->divider.x = (float)epi::UnalignedLittleEndianS32(td) / 65536.0f;
-        td += 4;
-        nd->divider.y = (float)epi::UnalignedLittleEndianS32(td) / 65536.0f;
-        td += 4;
-        nd->divider.delta_x = (float)epi::UnalignedLittleEndianS32(td) / 65536.0f;
-        td += 4;
-        nd->divider.delta_y = (float)epi::UnalignedLittleEndianS32(td) / 65536.0f;
-        td += 4;
-
-        nd->divider_length = PointToDistance(0, 0, nd->divider.delta_x, nd->divider.delta_y);
-
-        for (int j = 0; j < 2; j++)
-            for (int k = 0; k < 4; k++)
-            {
-                nd->bounding_boxes[j][k] = (float)epi::UnalignedLittleEndianS16(td);
-                td += 2;
-            }
-
-        for (int j = 0; j < 2; j++)
-        {
-            nd->children[j] = epi::UnalignedLittleEndianU32(td);
-            td += 4;
-
-            // update bbox pointers in subsector
-            if (nd->children[j] & kLeafSubsector)
-            {
-                Subsector *sss    = level_subsectors + (nd->children[j] & ~kLeafSubsector);
-                sss->bounding_box = &nd->bounding_boxes[j][0];
-            }
-        }
-    }
-
-    AssignSubsectorsToSectors();
-
-    LogDebug("LoadXGL3Nodes: Setup root node\n");
-    SetupRootNode();
-
-    LogDebug("LoadXGL3Nodes: Finished\n");
-    delete[] xgldata;
-    zgldata.clear();
 }
 
 static void LoadUDMFVertexes()
@@ -1488,6 +1152,7 @@ static void LoadUDMFSectors()
 
     LogDebug("LoadUDMFSectors: parsing TEXTMAP\n");
     int cur_sector = 0;
+    std::unordered_map<int, Sector *> tag_map;
 
     while (lex.TokensLeft())
     {
@@ -1782,8 +1447,15 @@ static void LoadUDMFSectors()
             ss->old_ceiling_height          = ss->ceiling_height;
             ss->interpolated_ceiling_height = ss->ceiling_height;
 
-            // -AJA- 1999/07/29: Keep sectors with same tag in a list.
-            GroupSectorTags(ss, level_sectors, cur_sector);
+            {
+                Sector *&chain_tail = tag_map[ss->tag];
+                if (chain_tail != nullptr)
+                {
+                    chain_tail->tag_next = ss;
+                    ss->tag_previous     = chain_tail;
+                }
+                chain_tail = ss;
+            }
             cur_sector++;
         }
         else // consume other blocks
@@ -2075,6 +1747,14 @@ static void LoadUDMFLineDefs()
 
     int cur_line = 0;
 
+    std::unordered_map<int, std::vector<int>> sector_tag_map;
+    for (int t = 0; t < total_level_sectors; t++)
+    {
+        int tag = level_sectors[t].tag;
+        if (tag > 0)
+            sector_tag_map[tag].push_back(t);
+    }
+
     for (;;)
     {
         std::string section;
@@ -2236,13 +1916,14 @@ static void LoadUDMFLineDefs()
 
             if (ld->tag && ld->special && ld->special->ef_.type_)
             {
-                for (int j = 0; j < total_level_sectors; j++)
+                auto it = sector_tag_map.find(ld->tag);
+                if (it != sector_tag_map.end())
                 {
-                    if (level_sectors[j].tag != ld->tag)
-                        continue;
-
-                    level_sectors[j].extrafloor_maximum++;
-                    total_level_extrafloors++;
+                    for (int j : it->second)
+                    {
+                        level_sectors[j].extrafloor_maximum++;
+                        total_level_extrafloors++;
+                    }
                 }
             }
 
@@ -2755,6 +2436,14 @@ static void SetupExtrafloors(void)
 
 static void SetupSlidingDoors(void)
 {
+    std::unordered_map<int, std::vector<int>> line_tag_map;
+    for (int t = 0; t < total_level_lines; t++)
+    {
+        int tag = level_lines[t].tag;
+        if (tag > 0)
+            line_tag_map[tag].push_back(t);
+    }
+
     for (int i = 0; i < total_level_lines; i++)
     {
         Line *ld = level_lines + i;
@@ -2766,14 +2455,14 @@ static void SetupSlidingDoors(void)
             ld->slide_door = ld->special;
         else
         {
-            for (int k = 0; k < total_level_lines; k++)
+            auto it = line_tag_map.find(ld->tag);
+            if (it != line_tag_map.end())
             {
-                Line *other = level_lines + k;
-
-                if (other->tag != ld->tag || other == ld)
-                    continue;
-
-                other->slide_door = ld->special;
+                for (int k : it->second)
+                {
+                    if (level_lines + k != ld)
+                        level_lines[k].slide_door = ld->special;
+                }
             }
         }
     }
@@ -2936,13 +2625,10 @@ static void DetectDeepWaterTrick(void)
 void GroupLines(void)
 {
     int     i;
-    int     j;
     int     total;
     Line   *li;
     Sector *sector;
     Seg    *seg;
-    float   bbox[4];
-    Line  **line_p;
 
     // setup remaining seg information
     for (i = 0, seg = level_segs; i < total_level_segs; i++, seg++)
@@ -2972,28 +2658,52 @@ void GroupLines(void)
         }
     }
 
-    // build line tables for each sector
     level_line_buffer = new Line *[total];
 
-    line_p = level_line_buffer;
-    sector = level_sectors;
+    int   *sector_offsets = new int[total_level_sectors];
+    float *sector_bboxes  = new float[total_level_sectors * 4];
 
+    EPI_CLEAR_MEMORY(sector_offsets, int, total_level_sectors);
+
+    Line **line_p = level_line_buffer;
+    sector        = level_sectors;
     for (i = 0; i < total_level_sectors; i++, sector++)
     {
-        BoundingBoxClear(bbox);
         sector->lines = line_p;
-        li            = level_lines;
-        for (j = 0; j < total_level_lines; j++, li++)
+        line_p       += sector->line_count;
+        BoundingBoxClear(sector_bboxes + i * 4);
+    }
+
+    for (i = 0; i < total_level_lines; i++)
+    {
+        li     = level_lines + i;
+        int fi = li->front_sector - level_sectors;
+        li->front_sector->lines[sector_offsets[fi]++] = li;
+        BoundingBoxAddPoint(sector_bboxes + fi * 4, li->vertex_1->X, li->vertex_1->Y);
+        BoundingBoxAddPoint(sector_bboxes + fi * 4, li->vertex_2->X, li->vertex_2->Y);
+
+        if (li->back_sector && li->back_sector != li->front_sector)
         {
-            if (li->front_sector == sector || li->back_sector == sector)
-            {
-                *line_p++ = li;
-                BoundingBoxAddPoint(bbox, li->vertex_1->X, li->vertex_1->Y);
-                BoundingBoxAddPoint(bbox, li->vertex_2->X, li->vertex_2->Y);
-            }
+            int bi = li->back_sector - level_sectors;
+            li->back_sector->lines[sector_offsets[bi]++] = li;
+            BoundingBoxAddPoint(sector_bboxes + bi * 4, li->vertex_1->X, li->vertex_1->Y);
+            BoundingBoxAddPoint(sector_bboxes + bi * 4, li->vertex_2->X, li->vertex_2->Y);
         }
-        if (line_p - sector->lines != sector->line_count)
+    }
+
+    for (i = 0; i < total_level_sectors; i++)
+    {
+        if (sector_offsets[i] != level_sectors[i].line_count)
             FatalError("GroupLines: miscounted");
+    }
+
+    delete[] sector_offsets;
+
+    sector = level_sectors;
+    for (i = 0; i < total_level_sectors; i++, sector++)
+    {
+        float *bbox = sector_bboxes + i * 4;
+        int    j;
 
         // Allow vertex slope if a triangular sector or a rectangular
         // sector in which two adjacent verts have an identical z-height
@@ -3200,6 +2910,8 @@ void GroupLines(void)
         sector->sound_effects_origin.y = (bbox[kBoundingBoxTop] + bbox[kBoundingBoxBottom]) / 2;
         sector->sound_effects_origin.z = (sector->floor_height + sector->ceiling_height) / 2;
     }
+
+    delete[] sector_bboxes;
 }
 
 static inline void AddSectorToVertices(int *branches, Line *ld, Sector *sec)
@@ -3453,18 +3165,6 @@ void LevelSetup(void)
     if (lumpnum < 0)
         FatalError("No such level: %s\n", current_map->lump_.c_str());
 
-    // get lump for XGL3 nodes from an XWA file
-    int xgl_lump = CheckXGLLumpNumberForName(current_map->lump_.c_str());
-
-    // ignore XGL nodes if it occurs _before_ the normal level marker.
-    // [ something has gone horribly wrong if this happens! ]
-    if (xgl_lump < lumpnum)
-        xgl_lump = -1;
-
-    // shouldn't happen (as during startup we checked for XWA files)
-    if (xgl_lump < 0)
-        FatalError("Internal error: missing XGL nodes.\n");
-
     // -CW- 2017/01/29: check for UDMF map lump
     if (VerifyLump(lumpnum + 1, "TEXTMAP"))
     {
@@ -3530,7 +3230,9 @@ void LevelSetup(void)
 
     delete[] temp_line_sides;
 
-    LoadXGL3Nodes(xgl_lump);
+    ajbsp::BuildNodesForCurrentLevel();
+    AssignSubsectorsToSectors();
+    SetupRootNode();
 
     GroupLines();
 

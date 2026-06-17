@@ -1,43 +1,22 @@
-//----------------------------------------------------------------------------
-//  EDGE Model Management
-//----------------------------------------------------------------------------
-//
-//  Copyright (c) 1999-2024 The EDGE Team.
-//
-//  This program is free software; you can redistribute it and/or
-//  modify it under the terms of the GNU General Public License
-//  as published by the Free Software Foundation; either version 3
-//  of the License, or (at your option) any later version.
-//
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU General Public License for more details.
-//
-//----------------------------------------------------------------------------
-
 #include "w_model.h"
 
 #include "e_main.h"
 #include "epi.h"
 #include "epi_str_compare.h"
 #include "epi_str_util.h"
-#include "i_defs_gl.h"
-#include "p_local.h" // map_object_list_head
+#include "p_local.h"
 #include "r_image.h"
-#include "r_md2.h"
-#include "r_mdl.h"
+#include "r_model.h"
 #include "r_things.h"
 #include "w_files.h"
 #include "w_wad.h"
 
 extern ConsoleVariable precache_all_models;
 
-// Model storage
 static ModelDefinition **models;
 static int               total_models = 0;
 
-ModelDefinition::ModelDefinition(const char *prefix) : radius_(1.0f), md2_model_(nullptr), mdl_model_(nullptr)
+ModelDefinition::ModelDefinition(const char *prefix) : radius_(1.0f), model_(nullptr)
 {
     strcpy(name_, prefix);
 
@@ -47,12 +26,9 @@ ModelDefinition::ModelDefinition(const char *prefix) : radius_(1.0f), md2_model_
 
 ModelDefinition::~ModelDefinition()
 {
-    // FIXME: delete model;
-
-    // TODO: free the skins
 }
 
-static void FindModelFrameNames(MD2Model *md, int model_num)
+static void FindModelFrameNames(ModelData *md, int model_num)
 {
     int missing = 0;
 
@@ -73,46 +49,7 @@ static void FindModelFrameNames(MD2Model *md, int model_num)
 
         EPI_ASSERT(st->model_frame);
 
-        st->frame = MD2FindFrame(md, st->model_frame);
-
-        if (st->frame >= 0)
-        {
-            st->flags &= ~kStateFrameFlagUnmapped;
-        }
-        else
-        {
-            missing++;
-            LogPrint("-- no such frame '%s'\n", st->model_frame);
-        }
-    }
-
-    if (missing > 0)
-        FatalError("Failed to find %d frames for model '%s' (see EDGE.LOG)\n", missing,
-                   ddf_model_names[model_num].c_str());
-}
-
-static void FindModelFrameNames(MDLModel *md, int model_num)
-{
-    int missing = 0;
-
-    LogDebug("Finding frame names for model '%s'...\n", ddf_model_names[model_num].c_str());
-
-    for (int stnum = 1; stnum < num_states; stnum++)
-    {
-        State *st = &states[stnum];
-
-        if (st->sprite != model_num)
-            continue;
-
-        if (!(st->flags & kStateFrameFlagModel))
-            continue;
-
-        if (!(st->flags & kStateFrameFlagUnmapped))
-            continue;
-
-        EPI_ASSERT(st->model_frame);
-
-        st->frame = MDLFindFrame(md, st->model_frame);
+        st->frame = ModelFindFrame(md, st->model_frame);
 
         if (st->frame >= 0)
         {
@@ -145,9 +82,6 @@ ModelDefinition *LoadModelFromLump(int model_num)
     epi::File *f         = nullptr;
     bool       pack_file = false;
 
-    // try MD3 first, then MD2, then MDL, then voxels
-
-    // This section is going to get kinda weird with the introduction of EPKs
     lumpname = epi::StringFormat("%sMD3", basename.c_str());
     lump_num = CheckDataFileIndexForName(lumpname.c_str());
     packname = epi::StringFormat("%s.md3", basename.c_str());
@@ -166,8 +100,8 @@ ModelDefinition *LoadModelFromLump(int model_num)
             if (f)
             {
                 LogDebug("Loading MD3 model from pack file : %s\n", packname.c_str());
-                def->md2_model_ = MD3Load(f, def->radius_);
-                pack_file       = true;
+                def->model_ = ModelLoad(f, def->radius_);
+                pack_file   = true;
             }
         }
         else
@@ -175,7 +109,7 @@ ModelDefinition *LoadModelFromLump(int model_num)
             LogDebug("Loading MD3 model from lump : %s\n", lumpname.c_str());
             f = LoadLumpAsFile(lumpname.c_str());
             if (f)
-                def->md2_model_ = MD3Load(f, def->radius_);
+                def->model_ = ModelLoad(f, def->radius_);
         }
     }
 
@@ -198,8 +132,8 @@ ModelDefinition *LoadModelFromLump(int model_num)
                 if (f)
                 {
                     LogDebug("Loading MD2 model from pack file : %s\n", packname.c_str());
-                    def->md2_model_ = MD2Load(f, def->radius_);
-                    pack_file       = true;
+                    def->model_ = ModelLoad(f, def->radius_);
+                    pack_file   = true;
                 }
             }
             else
@@ -207,7 +141,7 @@ ModelDefinition *LoadModelFromLump(int model_num)
                 LogDebug("Loading MD2 model from lump : %s\n", lumpname.c_str());
                 f = LoadLumpAsFile(lumpname.c_str());
                 if (f)
-                    def->md2_model_ = MD2Load(f, def->radius_);
+                    def->model_ = ModelLoad(f, def->radius_);
             }
         }
     }
@@ -231,8 +165,8 @@ ModelDefinition *LoadModelFromLump(int model_num)
                 if (f)
                 {
                     LogDebug("Loading MDL model from pack file : %s\n", packname.c_str());
-                    def->mdl_model_ = MDLLoad(f, def->radius_);
-                    pack_file       = true;
+                    def->model_ = ModelLoad(f, def->radius_);
+                    pack_file   = true;
                 }
             }
             else
@@ -240,7 +174,7 @@ ModelDefinition *LoadModelFromLump(int model_num)
                 LogDebug("Loading MDL model from lump : %s\n", lumpname.c_str());
                 f = LoadLumpAsFile(lumpname.c_str());
                 if (f)
-                    def->mdl_model_ = MDLLoad(f, def->radius_);
+                    def->model_ = ModelLoad(f, def->radius_);
             }
         }
     }
@@ -248,12 +182,11 @@ ModelDefinition *LoadModelFromLump(int model_num)
     if (!f)
         FatalError("Missing model lump for: %s\n!", basename.c_str());
 
-    EPI_ASSERT(def->md2_model_ || def->mdl_model_);
+    EPI_ASSERT(def->model_);
 
-    // close the lump/packfile
     delete f;
 
-    if (def->md2_model_)
+    if (def->model_->skin_id_list_.empty())
     {
         for (int i = 0; i < 10; i++)
         {
@@ -273,24 +206,17 @@ ModelDefinition *LoadModelFromLump(int model_num)
                 def->skins_[i] = ImageLookup(skinname.c_str(), kImageNamespaceSprite, kImageLookupNull);
             }
         }
-    }
 
-    // need at least one skin (MD2/MD3 only; MDLs and VXLs should have them
-    // baked in already)
-    if (def->md2_model_)
-    {
-        if (!def->skins_[1]) // What happened to skin 0? - Dasho
+        if (!def->skins_[1])
         {
             if (pack_file)
                 FatalError("Missing model skin: %s1\n", basename.c_str());
             else
                 FatalError("Missing model skin: %sSKN1\n", basename.c_str());
         }
-        FindModelFrameNames(def->md2_model_, model_num);
     }
 
-    if (def->mdl_model_)
-        FindModelFrameNames(def->mdl_model_, model_num);
+    FindModelFrameNames(def->model_, model_num);
 
     return def;
 }
@@ -299,7 +225,7 @@ void InitializeModels(void)
 {
     total_models = (int)ddf_model_names.size();
 
-    EPI_ASSERT(total_models >= 1); // at least SPR_NULL
+    EPI_ASSERT(total_models >= 1);
 
     StartupProgressMessage("Setting up models...");
 
@@ -314,7 +240,6 @@ void InitializeModels(void)
         for (int i = 1; i < total_models; i++)
         {
             models[i] = LoadModelFromLump(i);
-            // precache skins too
             for (int n = 0; n < 10; n++)
             {
                 if (models[i] && models[i]->skins_[n])
@@ -331,16 +256,11 @@ void InitializeModels(void)
 
 ModelDefinition *GetModel(int model_num)
 {
-    // model_num comes from the 'sprite' field of State, and
-    // is also an index into ddf_model_names vector.
-
     EPI_ASSERT(model_num > 0);
     EPI_ASSERT(model_num < total_models);
 
     if (!models[model_num])
-    {
         models[model_num] = LoadModelFromLump(model_num);
-    }
 
     return models[model_num];
 }
@@ -353,7 +273,6 @@ void PrecacheModels(void)
     uint8_t *model_present = new uint8_t[total_models];
     EPI_CLEAR_MEMORY(model_present, uint8_t, total_models);
 
-    // mark all monsters (etc) in the level
     for (MapObject *mo = map_object_list_head; mo; mo = mo->next_)
     {
         EPI_ASSERT(mo->state_);
@@ -378,7 +297,6 @@ void PrecacheModels(void)
         }
     }
 
-    // mark all weapons
     for (int k = 1; k < num_states; k++)
     {
         if ((states[k].flags & (kStateFrameFlagWeapon | kStateFrameFlagModel)) !=
@@ -402,7 +320,7 @@ void PrecacheModels(void)
         }
     }
 
-    for (int i = 1; i < total_models; i++) // ignore SPR_NULL
+    for (int i = 1; i < total_models; i++)
     {
         if (model_present[i])
         {
@@ -410,7 +328,6 @@ void PrecacheModels(void)
 
             const ModelDefinition *def = GetModel(i);
 
-            // precache skins too
             for (int n = 0; n < 10; n++)
             {
                 if (def && def->skins_[n])

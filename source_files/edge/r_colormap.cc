@@ -628,9 +628,11 @@ class ColormapShader : public AbstractShader
     }
 
     virtual void WorldMix(GLuint shape, int num_vert, GLuint tex, float alpha, int *pass_var, BlendingMode blending,
-                          bool masked, void *data, ShaderCoordinateFunction func)
+                          bool masked, void *data, ShaderCoordinateFunction func,
+                          ShaderCoordinateBatchFunction batch_func = nullptr)
     {
         EPI_UNUSED(masked);
+        EPI_UNUSED(batch_func);
         RGBAColor fc_to_use = fog_color_;
         float     fd_to_use = fog_density_;
         // check for DDFLEVL fog
@@ -648,23 +650,60 @@ class ColormapShader : public AbstractShader
             }
         }
 
-        RendererVertex *glvert = BeginRenderUnit(shape, num_vert, GL_MODULATE, tex, GL_MODULATE, fade_texture_,
-                                                 *pass_var, blending, fc_to_use, fd_to_use);
+        int out_vert;
+        if (shape == GL_POLYGON)
+            out_vert = (num_vert - 2) * 3;
+        else if (shape == GL_QUAD_STRIP)
+            out_vert = (num_vert / 2 - 1) * 6;
+        else
+            out_vert = num_vert;
 
+        RendererVertex temp[kMaximumPolygonVertices];
         for (int v_idx = 0; v_idx < num_vert; v_idx++)
         {
-            RendererVertex *dest = glvert + v_idx;
+            RendererVertex *dest = temp + v_idx;
 
             epi::SetRGBAAlpha(dest->rgba, alpha);
 
             HMM_Vec3 lit_pos;
+            HMM_Vec3 normal;
 
-            (*func)(data, v_idx, &dest->position, &dest->rgba, &dest->texture_coordinates[0], &dest->normal, &lit_pos);
+            (*func)(data, v_idx, &dest->position, &dest->rgba, &dest->texture_coordinates[0], &normal, &lit_pos);
 
             TextureCoordinates(dest, 1, &lit_pos);
         }
 
-        EndRenderUnit(num_vert);
+        RendererVertex *glvert = BeginRenderUnit(out_vert, GL_MODULATE, tex, GL_MODULATE, fade_texture_,
+                                                 *pass_var, blending, fc_to_use, fd_to_use);
+
+        if (shape == GL_POLYGON)
+        {
+            for (int i = 1; i < num_vert - 1; i++)
+            {
+                *glvert++ = temp[0];
+                *glvert++ = temp[i];
+                *glvert++ = temp[i + 1];
+            }
+        }
+        else if (shape == GL_QUAD_STRIP)
+        {
+            for (int i = 0; i < num_vert - 2; i += 2)
+            {
+                *glvert++ = temp[i];
+                *glvert++ = temp[i + 1];
+                *glvert++ = temp[i + 3];
+                *glvert++ = temp[i];
+                *glvert++ = temp[i + 3];
+                *glvert++ = temp[i + 2];
+            }
+        }
+        else
+        {
+            for (int v_idx = 0; v_idx < num_vert; v_idx++)
+                *glvert++ = temp[v_idx];
+        }
+
+        EndRenderUnit(out_vert);
 
         (*pass_var) += 1;
     }

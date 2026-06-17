@@ -21,6 +21,7 @@
 #endif
 
 #include "dm_state.h"
+#include "edge_profiling.h"
 #include "epi.h"
 #include "epi_sdl.h"
 #include "i_movie.h"
@@ -327,6 +328,8 @@ SoundEffectDefinition *LookupEffectDef(const SoundEffect *s)
 static void S_PlaySound(int idx, const SoundEffectDefinition *def, int category, const Position *pos, int flags,
                         SoundData *buf)
 {
+    EDGE_ZoneScoped;
+
     SoundChannel *chan = mix_channels[idx];
 
     chan->state_ = kChannelPlaying;

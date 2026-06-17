@@ -32,6 +32,7 @@
 // Need data structure definitions.
 
 #include "AlmostEquals.h"
+#include "edge_profiling.h"
 #include "i_defs_gl.h"
 #include "i_system.h"
 #include "m_math.h"
@@ -62,6 +63,11 @@ extern Line *level_lines;
 extern int   total_level_sides;
 extern Side *level_sides;
 
+extern Vertex *level_gl_vertexes;
+
+extern int  total_level_segs;
+extern Seg *level_segs;
+
 extern std::unordered_map<GLuint, GLint> texture_clamp_s;
 extern std::unordered_map<GLuint, GLint> texture_clamp_t;
 
@@ -88,22 +94,6 @@ extern BAMAngle clip_scope;
 
 // the most extreme angles of the view
 extern float view_x_slope, view_y_slope;
-
-struct ECFrameStats
-{
-	int draw_render_units;
-	int draw_planes;
-	int draw_wall_parts;
-	int draw_things;
-
-	void Clear()
-	{		
-		draw_render_units = 0;
-		draw_wall_parts = 0;
-		draw_planes = 0;
-		draw_things = 0;
-	}	
-};
 
 extern ECFrameStats ec_frame_stats;
 

@@ -2621,8 +2621,7 @@ static void SprayAttack(MapObject *mo)
             state = MapObjectFindLabel(target, "IMMUNITYHIT");
             if (state != 0)
                 MapObjectSetStateDeferred(target, state, 0);
-
-                continue;
+            continue;
         }
             
 

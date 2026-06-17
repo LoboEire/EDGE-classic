@@ -31,8 +31,9 @@
 #include "AlmostEquals.h"
 #include "dm_defs.h"
 #include "dm_state.h"
+#include "edge_profiling.h"
 #include "epi.h"
-#include "epi_doomdefs.h"
+#include "epi_simd.h"
 #include "g_game.h"
 #include "i_defs_gl.h"
 #include "m_bbox.h"
@@ -67,51 +68,47 @@ static RenderBatch *current_batch = nullptr;
 #endif
 
 #ifdef BSP_MULTITHREAD
-#ifdef __APPLE__
-#include <SDL_thread.h>
-#else
-#include <SDL2/SDL_thread.h>
-#endif
+#include "epi_thread.h"
 
 constexpr int32_t kMaxRenderBatch = 65536 / 4;
 
 struct BSPSignal
 {
-    SDL_mutex *mutex;
-    SDL_cond  *cond;
-    int        value;
+    epi::Mutex mutex;
+    epi::Cond  cond;
+    int      value;
 };
 
 static void BSPSignalInit(BSPSignal *sig)
 {
-    sig->mutex = SDL_CreateMutex();
-    sig->cond  = SDL_CreateCond();
     sig->value = 0;
+    epi::MutexInit(&sig->mutex);
+    epi::CondInit(&sig->cond);
 }
 
 static void BSPSignalTerm(BSPSignal *sig)
 {
-    SDL_DestroyCond(sig->cond);
-    SDL_DestroyMutex(sig->mutex);
+    epi::CondDestroy(&sig->cond);
+    epi::MutexDestroy(&sig->mutex);
 }
 
 static void BSPSignalRaise(BSPSignal *sig)
 {
-    SDL_LockMutex(sig->mutex);
+    epi::MutexLock(&sig->mutex);
     sig->value = 1;
-    SDL_UnlockMutex(sig->mutex);
-    SDL_CondSignal(sig->cond);
+    epi::MutexUnlock(&sig->mutex);
+    epi::CondSignal(&sig->cond);
 }
 
 static int BSPSignalWait(BSPSignal *sig, int timeout_ms)
 {
     int timed_out = 0;
-    SDL_LockMutex(sig->mutex);
+    epi::MutexLock(&sig->mutex);
     while (sig->value == 0)
     {
         if (timeout_ms < 0)
-            SDL_CondWait(sig->cond, sig->mutex);
-        else if (SDL_CondWaitTimeout(sig->cond, sig->mutex, (Uint32)timeout_ms) == SDL_MUTEX_TIMEDOUT)
+            epi::CondWait(&sig->cond, &sig->mutex);
+        else if (epi::CondWaitTimeout(&sig->cond, &sig->mutex, timeout_ms) == 0)
         {
             timed_out = 1;
             break;
@@ -119,7 +116,7 @@ static int BSPSignalWait(BSPSignal *sig, int timeout_ms)
     }
     if (!timed_out)
         sig->value = 0;
-    SDL_UnlockMutex(sig->mutex);
+    epi::MutexUnlock(&sig->mutex);
     return !timed_out;
 }
 
@@ -127,9 +124,9 @@ struct BSPQueue
 {
     BSPSignal    data_ready;
     BSPSignal    space_open;
-    SDL_atomic_t count;
-    SDL_atomic_t head;
-    SDL_atomic_t tail;
+    epi::AtomicInt count;
+    epi::AtomicInt head;
+    epi::AtomicInt tail;
     void       **values;
     int          size;
 };
@@ -140,56 +137,57 @@ static void BSPQueueInit(BSPQueue *q, int size, void **values, int count)
     q->size   = size;
     BSPSignalInit(&q->data_ready);
     BSPSignalInit(&q->space_open);
-    SDL_AtomicSet(&q->head, 0);
-    SDL_AtomicSet(&q->tail, count > size ? size : count);
-    SDL_AtomicSet(&q->count, count > size ? size : count);
+    int clamped = count > size ? size : count;
+    epi::AtomicStore(&q->head, 0);
+    epi::AtomicStore(&q->tail, clamped);
+    epi::AtomicStore(&q->count, clamped);
 }
 
 static int BSPQueueProduce(BSPQueue *q, void *value, int timeout_ms)
 {
-    while (SDL_AtomicGet(&q->count) == q->size)
+    while (epi::AtomicLoad(&q->count) == q->size)
     {
         if (timeout_ms == 0)
             return 0;
         if (BSPSignalWait(&q->space_open, timeout_ms) == 0)
             return 0;
     }
-    int tail                  = SDL_AtomicAdd(&q->tail, 1);
+    int tail                  = epi::AtomicAdd(&q->tail, 1);
     q->values[tail % q->size] = value;
-    if (SDL_AtomicAdd(&q->count, 1) == 0)
+    if (epi::AtomicAdd(&q->count, 1) == 0)
         BSPSignalRaise(&q->data_ready);
     return 1;
 }
 
 static void *BSPQueueConsume(BSPQueue *q, int timeout_ms)
 {
-    while (SDL_AtomicGet(&q->count) == 0)
+    while (epi::AtomicLoad(&q->count) == 0)
     {
         if (timeout_ms == 0)
             return nullptr;
         if (BSPSignalWait(&q->data_ready, timeout_ms) == 0)
             return nullptr;
     }
-    int   head               = SDL_AtomicAdd(&q->head, 1);
-    void *retval             = q->values[head % q->size];
-    if (SDL_AtomicAdd(&q->count, -1) == q->size)
+    int   head   = epi::AtomicAdd(&q->head, 1);
+    void *retval = q->values[head % q->size];
+    if (epi::AtomicAdd(&q->count, -1) == q->size)
         BSPSignalRaise(&q->space_open);
     return retval;
 }
 
 static int BSPQueueCount(BSPQueue *q)
 {
-    return SDL_AtomicGet(&q->count);
+    return epi::AtomicLoad(&q->count);
 }
 
 struct BSPThread
 {
-    SDL_Thread  *thread_;
+    epi::Thread    thread_;
     BSPSignal    signal_start_;
-    SDL_atomic_t traverse_finished_;
-    BSPQueue queue_;
+    epi::AtomicInt traverse_finished_;
+    BSPQueue     queue_;
     RenderBatch *render_queue_[kMaxRenderBatch];
-    SDL_atomic_t exit_flag_;
+    epi::AtomicInt exit_flag_;
 };
 
 static struct BSPThread bsp_thread;
@@ -278,6 +276,8 @@ static void BSPWalkMirror(DrawSubsector *dsub, Seg *seg, BAMAngle left, BAMAngle
 //
 static void BSPWalkSeg(DrawSubsector *dsub, Seg *seg)
 {
+    EDGE_ZoneScoped;
+
     // ignore segs sitting on current mirror
     if (bsp_mirror_set.SegOnPortal(seg))
         return;
@@ -570,6 +570,8 @@ static void BSPWalkSeg(DrawSubsector *dsub, Seg *seg)
 //
 static bool BSPCheckBBox(const float *bspcoord)
 {
+    EDGE_ZoneScoped;
+
     if (bsp_mirror_set.TotalActive() > 0)
     {
         // a flipped bbox may no longer be axis aligned, hence we
@@ -748,6 +750,8 @@ static inline void AddNewDrawFloor(DrawSubsector *dsub, Extrafloor *ef, float fl
 //
 static void BSPWalkSubsector(int num)
 {
+    EDGE_ZoneScoped;
+
     Subsector *sub    = &level_subsectors[num];
     Sector    *sector = sub->sector;
 
@@ -980,6 +984,8 @@ static void BSPWalkSubsector(int num)
 //
 void BSPWalkNode(unsigned int bspnum)
 {
+    EDGE_ZoneScoped;
+
     BSPNode *node;
     int      side;
 
@@ -1032,22 +1038,21 @@ void BSPWalkNode(unsigned int bspnum)
 
 #ifdef BSP_MULTITHREAD
 
-static int32_t BSPTraverseProc(void *thread_data)
+static int BSPTraverseProc(void *)
 {
-    EPI_UNUSED(thread_data);
+    epi::EnableFastFloats();
 
-    while (SDL_AtomicGet(&bsp_thread.exit_flag_) == 0)
+    while (epi::AtomicLoad(&bsp_thread.exit_flag_) == 0)
     {
         if (BSPSignalWait(&bsp_thread.signal_start_, -1))
         {
-            if (SDL_AtomicGet(&bsp_thread.exit_flag_))
+            if (epi::AtomicLoad(&bsp_thread.exit_flag_))
             {
                 break;
             }
 
             current_batch = nullptr;
 
-            // walk the bsp tree
             BSPWalkNode(root_node);
 
             if (current_batch && current_batch->num_items_)
@@ -1055,10 +1060,9 @@ static int32_t BSPTraverseProc(void *thread_data)
                 BSPQueueRenderBatch(current_batch);
             }
 
-            SDL_AtomicSet(&bsp_thread.traverse_finished_, 1);
+            epi::AtomicStore(&bsp_thread.traverse_finished_, 1);
         }
     }
-
     return 0;
 }
 
@@ -1132,7 +1136,7 @@ static bool traverse_stop_signalled;
 void BSPTraverse()
 {
     traverse_stop_signalled = false;
-    SDL_AtomicSet(&bsp_thread.traverse_finished_, 0);
+    epi::AtomicStore(&bsp_thread.traverse_finished_, 0);
     BSPSignalRaise(&bsp_thread.signal_start_);
 }
 
@@ -1140,7 +1144,7 @@ bool BSPTraversing()
 {
     if (!traverse_stop_signalled)
     {
-        traverse_stop_signalled = !!SDL_AtomicGet(&bsp_thread.traverse_finished_);
+        traverse_stop_signalled = !!epi::AtomicLoad(&bsp_thread.traverse_finished_);
     }
 
     if (!BSPQueueCount(&bsp_thread.queue_) && traverse_stop_signalled)
@@ -1153,17 +1157,17 @@ bool BSPTraversing()
 
 void BSPStartThread()
 {
-    SDL_AtomicSet(&bsp_thread.exit_flag_, 0);
-    SDL_AtomicSet(&bsp_thread.traverse_finished_, 1);
+    epi::AtomicStore(&bsp_thread.exit_flag_, 0);
+    epi::AtomicStore(&bsp_thread.traverse_finished_, 1);
     BSPSignalInit(&bsp_thread.signal_start_);
     BSPQueueInit(&bsp_thread.queue_, kMaxRenderBatch, (void **)bsp_thread.render_queue_, 0);
-    bsp_thread.thread_ = SDL_CreateThread((SDL_ThreadFunction)BSPTraverseProc, "BSPTraverse", nullptr);
+    bsp_thread.thread_ = epi::ThreadCreate(BSPTraverseProc, NULL);
 }
 void BSPStopThread()
 {
-    SDL_AtomicSet(&bsp_thread.exit_flag_, 1);
+    epi::AtomicStore(&bsp_thread.exit_flag_, 1);
     BSPSignalRaise(&bsp_thread.signal_start_);
-    SDL_WaitThread(bsp_thread.thread_, nullptr);
+    epi::ThreadJoin(bsp_thread.thread_);
     BSPSignalTerm(&bsp_thread.signal_start_);
 }
 

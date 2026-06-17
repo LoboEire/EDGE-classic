@@ -180,7 +180,7 @@ std::string ArgumentValue(std::string_view long_name, int *total_parameters)
 // present, sets it to false if parm prefixed with `-no' is present,
 // otherwise leaves it unchanged.
 //
-void CheckBooleanParameter(const std::string &parameter, bool *boolean_value, bool reverse)
+void CheckBooleanParameter(const char *parameter, bool *boolean_value, bool reverse)
 {
     if (FindArgument(parameter) > 0)
     {
@@ -188,14 +188,14 @@ void CheckBooleanParameter(const std::string &parameter, bool *boolean_value, bo
         return;
     }
 
-    if (FindArgument(epi::StringFormat("no%s", parameter.c_str())) > 0)
+    if (FindArgument(epi::StringFormat("no%s", parameter)) > 0)
     {
         *boolean_value = reverse;
         return;
     }
 }
 
-void CheckBooleanConsoleVariable(const std::string &parameter, ConsoleVariable *variable, bool reverse)
+void CheckBooleanConsoleVariable(const char *parameter, ConsoleVariable *variable, bool reverse)
 {
     if (FindArgument(parameter) > 0)
     {
@@ -203,7 +203,7 @@ void CheckBooleanConsoleVariable(const std::string &parameter, ConsoleVariable *
         return;
     }
 
-    if (FindArgument(epi::StringFormat("no%s", parameter.c_str())) > 0)
+    if (FindArgument(epi::StringFormat("no%s", parameter)) > 0)
     {
         *variable = (reverse ? 1 : 0);
         return;

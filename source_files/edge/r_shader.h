@@ -89,6 +89,9 @@ class ColorMixer
 typedef void (*ShaderCoordinateFunction)(void *data, int v_idx, HMM_Vec3 *pos, RGBAColor *rgb, HMM_Vec2 *texc,
                                          HMM_Vec3 *normal, HMM_Vec3 *lit_pos);
 
+typedef void (*ShaderCoordinateBatchFunction)(void *data, int v_base, HMM_Vec3 pos[4], RGBAColor rgb[4],
+                                              HMM_Vec2 texc[4], HMM_Vec3 normal[4], HMM_Vec3 lit_pos[4]);
+
 /* abstract base class */
 class AbstractShader
 {
@@ -108,7 +111,8 @@ class AbstractShader
 
     // used to render overlay textures (world polygons)
     virtual void WorldMix(GLuint shape, int num_vert, GLuint tex, float alpha, int *pass_var, BlendingMode blending,
-                          bool masked, void *data, ShaderCoordinateFunction func) = 0;
+                          bool masked, void *data, ShaderCoordinateFunction func,
+                          ShaderCoordinateBatchFunction batch_func = nullptr) = 0;
 
     virtual void SetRadius(float r) = 0;
 };

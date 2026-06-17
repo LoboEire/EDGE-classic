@@ -28,7 +28,6 @@
 #include "dm_defs.h"
 #include "dm_state.h"
 #include "epi.h"
-#include "epi_doomdefs.h"
 #include "epi_str_util.h"
 #include "g_game.h"
 #include "hu_draw.h"

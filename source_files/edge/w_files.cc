@@ -97,8 +97,6 @@ size_t AddPendingFile(std::string_view file, FileKind kind)
 extern void ProcessFixersForWAD(DataFile *df);
 extern void ProcessWad(DataFile *df, size_t file_index);
 
-extern std::string BuildXGLNodesForWAD(DataFile *df);
-
 static void DEH_ConvertFile(const std::string &filename)
 {
     epi::File *F = epi::FileOpen(filename, epi::kFileAccessRead | epi::kFileAccessBinary);
@@ -245,26 +243,6 @@ void ProcessMultipleFiles()
         }
 
         pending_files.clear();
-    }
-}
-
-void BuildXGLNodes(void)
-{
-    for (size_t i = 0; i < data_files.size(); i++)
-    {
-        DataFile *df = data_files[i];
-
-        if (df->kind_ == kFileKindIWAD || df->kind_ == kFileKindPWAD || df->kind_ == kFileKindPackWAD ||
-            df->kind_ == kFileKindIPackWAD)
-        {
-            std::string xwa_filename = BuildXGLNodesForWAD(df);
-
-            if (!xwa_filename.empty())
-            {
-                DataFile *new_df = new DataFile(xwa_filename, kFileKindXWAD);
-                ProcessFile(new_df);
-            }
-        }
     }
 }
 

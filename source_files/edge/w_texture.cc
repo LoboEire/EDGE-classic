@@ -23,10 +23,10 @@
 
 #include "w_texture.h"
 
+#include "dm_defs.h"
 #include "e_main.h"
 #include "e_search.h"
 #include "epi.h"
-#include "epi_doomdefs.h"
 #include "epi_endian.h"
 #include "epi_str_compare.h"
 #include "epi_str_util.h"

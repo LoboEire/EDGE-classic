@@ -36,7 +36,6 @@
 #include "dm_defs.h"
 #include "dm_state.h"
 #include "epi.h"
-#include "epi_doomdefs.h"
 #include "epi_str_compare.h"
 #include "epi_str_util.h"
 #include "f_interm.h"

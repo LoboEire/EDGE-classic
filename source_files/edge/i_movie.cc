@@ -19,6 +19,7 @@
 #include "e_event.h"
 #include "epi.h"
 #include "epi_sdl.h"
+#include "epi_simd.h"
 #include "hu_draw.h"
 #include "i_defs_gl.h"
 #include "i_sound.h"
@@ -131,6 +132,64 @@ void MovieAudioCallback(plm_t *mpeg, plm_samples_t *samples, void *user)
     }
 }
 
+static void MovieFrameToRGBA(plm_frame_t *frame, uint8_t *dest, int stride)
+{
+    int cols = frame->width >> 1;
+    int rows = frame->height >> 1;
+    int yw   = frame->y.width;
+    int cw   = frame->cb.width;
+
+    const epi::SimdF32x4 v16   = epi::SplatF32x4(16.0f);
+    const epi::SimdF32x4 v0    = epi::SplatF32x4(0.0f);
+    const epi::SimdF32x4 v255  = epi::SplatF32x4(255.0f);
+    const epi::SimdF32x4 y_mul = epi::SplatF32x4(1.16438f);
+    const epi::SimdI32x4 alpha = epi::SplatI32x4((int32_t)0xFF000000u);
+
+    for (int row = 0; row < rows; row++)
+    {
+        int c_index = row * cw;
+        int y_index = row * 2 * yw;
+        int d_index = row * 2 * stride;
+
+        for (int col = 0; col < cols; col++)
+        {
+            float cr = (float)frame->cr.data[c_index] - 128.0f;
+            float cb = (float)frame->cb.data[c_index] - 128.0f;
+
+            epi::SimdF32x4 ys = epi::SetF32x4(
+                (float)frame->y.data[y_index],
+                (float)frame->y.data[y_index + 1],
+                (float)frame->y.data[y_index + yw],
+                (float)frame->y.data[y_index + yw + 1]);
+
+            epi::SimdF32x4 y_scaled = epi::MulF32x4(epi::SubF32x4(ys, v16), y_mul);
+
+            epi::SimdF32x4 r_off = epi::SplatF32x4(cr * 1.59603f);
+            epi::SimdF32x4 g_off = epi::SplatF32x4(cb * 0.39176f + cr * 0.81297f);
+            epi::SimdF32x4 b_off = epi::SplatF32x4(cb * 2.01723f);
+
+            epi::SimdF32x4 r = epi::MinF32x4(epi::MaxF32x4(epi::AddF32x4(y_scaled, r_off), v0), v255);
+            epi::SimdF32x4 g = epi::MinF32x4(epi::MaxF32x4(epi::SubF32x4(y_scaled, g_off), v0), v255);
+            epi::SimdF32x4 b = epi::MinF32x4(epi::MaxF32x4(epi::AddF32x4(y_scaled, b_off), v0), v255);
+
+            epi::SimdI32x4 ri = epi::CvtF32x4ToI32x4(r);
+            epi::SimdI32x4 gi = epi::CvtF32x4ToI32x4(g);
+            epi::SimdI32x4 bi = epi::CvtF32x4ToI32x4(b);
+
+            epi::SimdI32x4 rgba = epi::OrI32x4(
+                epi::OrI32x4(epi::OrI32x4(ri, epi::ShiftLeftI32x4<8>(gi)), epi::ShiftLeftI32x4<16>(bi)),
+                alpha);
+
+            epi::StoreLo64(dest + d_index, rgba);
+            epi::StoreHi64(dest + d_index + stride, rgba);
+
+            c_index += 1;
+            y_index += 2;
+            d_index += 8;
+        }
+    }
+}
+
 void MovieVideoCallback(plm_t *mpeg, plm_frame_t *frame, void *user)
 {
     EPI_UNUSED(mpeg);
@@ -138,7 +197,7 @@ void MovieVideoCallback(plm_t *mpeg, plm_frame_t *frame, void *user)
 
     if (canvas_can_update)
     {
-        plm_frame_to_rgba(frame, rgb_data, frame->width * 4);
+        MovieFrameToRGBA(frame, rgb_data, frame->width * 4);
 
         render_state->BindTexture(canvas);
         render_state->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, frame->width, frame->height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
@@ -335,22 +394,26 @@ void MovieDrawer()
         RGBAColor unit_col = kRGBAWhite;
 
         RendererVertex *glvert =
-            BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, canvas, (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingNone);
+            BeginRenderUnit(6, GL_MODULATE, canvas, (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingNone);
 
+        RendererVertex *v0             = glvert;
         glvert->rgba                   = unit_col;
         glvert->texture_coordinates[0] = {{tx1, ty2}};
         glvert++->position             = {{vx1, vy2, 0}};
         glvert->rgba                   = unit_col;
         glvert->texture_coordinates[0] = {{tx2, ty2}};
         glvert++->position             = {{vx2, vy2, 0}};
+        RendererVertex *v2             = glvert;
         glvert->rgba                   = unit_col;
         glvert->texture_coordinates[0] = {{tx2, ty1}};
         glvert++->position             = {{vx2, vy1, 0}};
+        *glvert++                      = *v0;
+        *glvert++                      = *v2;
         glvert->rgba                   = unit_col;
         glvert->texture_coordinates[0] = {{tx1, ty1}};
         glvert->position               = {{vx1, vy1, 0}};
 
-        EndRenderUnit(4);
+        EndRenderUnit(6);
 
         // Fade-in
         fadein = plm_get_time(decoder);
@@ -358,19 +421,23 @@ void MovieDrawer()
         {
             unit_col = epi::MakeRGBAFloat(0.0f, 0.0f, 0.0f, ((0.25f - (float)fadein) / 0.25f));
 
-            glvert =
-                BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingAlpha);
+            glvert = BeginRenderUnit(6, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0,
+                                     kBlendingAlpha);
 
-            glvert->rgba       = unit_col;
-            glvert++->position = {{vx1, vy2, 0}};
-            glvert->rgba       = unit_col;
-            glvert++->position = {{vx2, vy2, 0}};
-            glvert->rgba       = unit_col;
-            glvert++->position = {{vx2, vy1, 0}};
-            glvert->rgba       = unit_col;
-            glvert->position   = {{vx1, vy1, 0}};
+            RendererVertex *v0f = glvert;
+            glvert->rgba        = unit_col;
+            glvert++->position  = {{vx1, vy2, 0}};
+            glvert->rgba        = unit_col;
+            glvert++->position  = {{vx2, vy2, 0}};
+            RendererVertex *v2f = glvert;
+            glvert->rgba        = unit_col;
+            glvert++->position  = {{vx2, vy1, 0}};
+            *glvert++           = *v0f;
+            *glvert++           = *v2f;
+            glvert->rgba        = unit_col;
+            glvert->position    = {{vx1, vy1, 0}};
 
-            EndRenderUnit(4);
+            EndRenderUnit(6);
         }
 
         FinishUnitBatch();
@@ -399,38 +466,46 @@ void MovieDrawer()
             unit_col = kRGBAWhite;
 
         RendererVertex *glvert =
-            BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, canvas, (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingNone);
+            BeginRenderUnit(6, GL_MODULATE, canvas, (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingNone);
 
+        RendererVertex *v0             = glvert;
         glvert->rgba                   = unit_col;
         glvert->texture_coordinates[0] = {{tx1, ty2}};
         glvert++->position             = {{vx1, vy2, 0}};
         glvert->rgba                   = unit_col;
         glvert->texture_coordinates[0] = {{tx2, ty2}};
         glvert++->position             = {{vx2, vy2, 0}};
+        RendererVertex *v2             = glvert;
         glvert->rgba                   = unit_col;
         glvert->texture_coordinates[0] = {{tx2, ty1}};
         glvert++->position             = {{vx2, vy1, 0}};
+        *glvert++                      = *v0;
+        *glvert++                      = *v2;
         glvert->rgba                   = unit_col;
         glvert->texture_coordinates[0] = {{tx1, ty1}};
         glvert->position               = {{vx1, vy1, 0}};
 
-        EndRenderUnit(4);
+        EndRenderUnit(6);
 
         // Fade-out
         unit_col = epi::MakeRGBAFloat(0.0f, 0.0f, 0.0f, (HMM_MAX(0.0f, 1.0f - ((0.25f - (float)fadeout) / 0.25f))));
 
-        glvert = BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingAlpha);
+        glvert = BeginRenderUnit(6, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingAlpha);
 
-        glvert->rgba       = unit_col;
-        glvert++->position = {{vx1, vy2, 0}};
-        glvert->rgba       = unit_col;
-        glvert++->position = {{vx2, vy2, 0}};
-        glvert->rgba       = unit_col;
-        glvert++->position = {{vx2, vy1, 0}};
-        glvert->rgba       = unit_col;
-        glvert->position   = {{vx1, vy1, 0}};
+        RendererVertex *v0o = glvert;
+        glvert->rgba        = unit_col;
+        glvert++->position  = {{vx1, vy2, 0}};
+        glvert->rgba        = unit_col;
+        glvert++->position  = {{vx2, vy2, 0}};
+        RendererVertex *v2o = glvert;
+        glvert->rgba        = unit_col;
+        glvert++->position  = {{vx2, vy1, 0}};
+        *glvert++           = *v0o;
+        *glvert++           = *v2o;
+        glvert->rgba        = unit_col;
+        glvert->position    = {{vx1, vy1, 0}};
 
-        EndRenderUnit(4);
+        EndRenderUnit(6);
 
         FinishUnitBatch();
     }

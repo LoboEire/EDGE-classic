@@ -32,10 +32,10 @@
 #include "AlmostEquals.h"
 #include "con_main.h"
 #include "con_var.h"
+#include "dm_defs.h"
 #include "dm_state.h"
 #include "e_input.h"
 #include "epi.h"
-#include "epi_doomdefs.h"
 #include "epi_str_compare.h"
 #include "hu_draw.h"
 #include "hu_style.h"
@@ -221,42 +221,61 @@ static void DrawAllLines()
     {
         if (!map_line_pointers[i].empty())
         {
-            StartUnitBatch(false);
+            float hw;
             if (i == 3)
-                render_state->LineWidth(map_pulse_width);
+                hw = map_pulse_width * 0.5f;
             else if (i == 2)
-                render_state->LineWidth(3.5f);
+                hw = 1.75f;
             else if (i == 1)
-                render_state->LineWidth(1.5f);
+                hw = 0.75f;
             else
-                render_state->LineWidth(1.0f);
-            current_glvert = BeginRenderUnit(GL_LINES, kMaximumLineVerts, GL_MODULATE, 0,
+                hw = 0.5f;
+            StartUnitBatch(false);
+            current_glvert = BeginRenderUnit(kMaximumLineVerts, GL_MODULATE, 0,
                                              (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingAlpha);
             for (AutomapLine *line : map_line_pointers[i])
             {
                 RGBAColor col    = line->color;
                 HMM_Vec4 *points = &line->points;
-                if (current_vert_count > kMaximumLineVerts - 2)
+                if (current_vert_count > kMaximumLineVerts - 6)
                 {
                     EndRenderUnit(current_vert_count);
                     FinishUnitBatch();
                     current_vert_count = 0;
                     StartUnitBatch(false);
-                    current_glvert = BeginRenderUnit(GL_LINES, kMaximumLineVerts, GL_MODULATE, 0,
+                    current_glvert = BeginRenderUnit(kMaximumLineVerts, GL_MODULATE, 0,
                                                      (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingAlpha);
                 }
-                current_glvert->position = {{points->X, points->Y, 0}};
-                current_glvert++->rgba   = col;
-                current_glvert->position = {{points->Z, points->W, 0}};
-                current_glvert++->rgba   = col;
-                current_vert_count += 2;
+                float x1  = points->X;
+                float y1  = points->Y;
+                float x2  = points->Z;
+                float y2  = points->W;
+                float dx  = x2 - x1;
+                float dy  = y2 - y1;
+                float len = sqrtf(dx * dx + dy * dy);
+                if (len < 0.0001f)
+                    continue;
+                float            nx = -dy / len * hw;
+                float            ny = dx / len * hw;
+                RendererVertex  *lv0 = current_glvert;
+                current_glvert->rgba = col;
+                current_glvert++->position = {{x1 - nx, y1 - ny, 0}};
+                current_glvert->rgba = col;
+                current_glvert++->position = {{x1 + nx, y1 + ny, 0}};
+                RendererVertex *lv2 = current_glvert;
+                current_glvert->rgba = col;
+                current_glvert++->position = {{x2 + nx, y2 + ny, 0}};
+                *current_glvert++ = *lv0;
+                *current_glvert++ = *lv2;
+                current_glvert->rgba = col;
+                current_glvert++->position = {{x2 - nx, y2 - ny, 0}};
+                current_vert_count += 6;
             }
             EndRenderUnit(current_vert_count);
             FinishUnitBatch();
             current_vert_count = 0;
         }
     }
-    render_state->LineWidth(1.0f);
     automap_line_position = 0;
     map_line_pointers[0].clear();
     map_line_pointers[1].clear();

@@ -34,6 +34,7 @@
 #include "dm_state.h"
 #include "e_input.h"
 #include "e_player.h"
+#include "edge_profiling.h"
 #include "epi.h"
 #include "epi_str_compare.h"
 #include "epi_str_util.h"
@@ -342,22 +343,26 @@ static void CalcSizes()
 
 static void SolidBox(float x, float y, float w, float h, RGBAColor col, float alpha)
 {
-    RendererVertex *glvert = BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0,
+    RendererVertex *glvert = BeginRenderUnit(6, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0,
                                              alpha < 0.99f ? kBlendingAlpha : kBlendingNone);
 
     RGBAColor unit_col = col;
     epi::SetRGBAAlpha(unit_col, alpha);
 
+    RendererVertex *v0 = glvert;
     glvert->rgba       = unit_col;
     glvert++->position = {{x, y, 0}};
     glvert->rgba       = unit_col;
     glvert++->position = {{x, y + h, 0}};
+    RendererVertex *v2 = glvert;
     glvert->rgba       = unit_col;
     glvert++->position = {{x + w, y + h, 0}};
+    *glvert++          = *v0;
+    *glvert++          = *v2;
     glvert->rgba       = unit_col;
     glvert->position   = {{x + w, y, 0}};
 
-    EndRenderUnit(4);
+    EndRenderUnit(6);
 }
 
 // set params and starts render unit for console text drawing
@@ -386,8 +391,8 @@ static RendererVertex *StartText()
         blend = kBlendingAlpha;
     }
 
-    return BeginRenderUnit(GL_QUADS, kMaximumLocalVertices, GL_MODULATE, tex_id, (GLuint)kTextureEnvironmentDisable, 0,
-                           0, blend);
+    return BeginRenderUnit(kMaximumLocalVertices, GL_MODULATE, tex_id, (GLuint)kTextureEnvironmentDisable,
+                           0, 0, blend);
 }
 
 static void AddChar(float x, float y, char ch, RendererVertex *&glvert, RGBAColor col)
@@ -402,15 +407,19 @@ static void AddChar(float x, float y, char ch, RendererVertex *&glvert, RGBAColo
         float y_adjust        = con_font->truetype_glyph_map_.at((uint8_t)ch).y_shift[current_font_size] * FNSZ_ratio;
         float height          = con_font->truetype_glyph_map_.at((uint8_t)ch).height[current_font_size] * FNSZ_ratio;
         stbtt_aligned_quad *q = &con_font->truetype_glyph_map_.at((uint8_t)ch).character_quad[current_font_size];
+        RendererVertex *va    = glvert;
         glvert->rgba          = col;
         glvert->position      = {{x + x_adjust, y - y_adjust, 0}};
         glvert++->texture_coordinates[0] = {{q->s0, q->t0}};
         glvert->rgba                     = col;
         glvert->position                 = {{x + x_adjust + width, y - y_adjust, 0}};
         glvert++->texture_coordinates[0] = {{q->s1, q->t0}};
+        RendererVertex *vc               = glvert;
         glvert->rgba                     = col;
         glvert->position                 = {{x + x_adjust + width, y - y_adjust - height, 0}};
         glvert++->texture_coordinates[0] = {{q->s1, q->t1}};
+        *glvert++                        = *va;
+        *glvert++                        = *vc;
         glvert->rgba                     = col;
         glvert->position                 = {{x + x_adjust, y - y_adjust - height, 0}};
         glvert++->texture_coordinates[0] = {{q->s0, q->t1}};
@@ -425,15 +434,19 @@ static void AddChar(float x, float y, char ch, RendererVertex *&glvert, RGBAColo
         float ty1 = (float)(py) * 0.0625f;
         float ty2 = (float)(py + 1) * 0.0625f;
 
+        RendererVertex *va               = glvert;
         glvert->rgba                     = col;
         glvert->position                 = {{x, y, 0}};
         glvert++->texture_coordinates[0] = {{tx1, ty1}};
         glvert->rgba                     = col;
         glvert->position                 = {{x, y + FNSZ, 0}};
         glvert++->texture_coordinates[0] = {{tx1, ty2}};
+        RendererVertex *vc               = glvert;
         glvert->rgba                     = col;
         glvert->position                 = {{x + FNSZ, y + FNSZ, 0}};
         glvert++->texture_coordinates[0] = {{tx2, ty2}};
+        *glvert++                        = *va;
+        *glvert++                        = *vc;
         glvert->rgba                     = col;
         glvert->position                 = {{x + FNSZ, y, 0}};
         glvert++->texture_coordinates[0] = {{tx2, ty1}};
@@ -450,7 +463,7 @@ static uint16_t AddText(float x, float y, const char *s, RGBAColor col, Renderer
     for (; *s; s++, pos++)
     {
         AddChar(x, y, *s, runit, col);
-        verts_added += 4;
+        verts_added += 6;
 
         if (console_font->definition_->type_ == kFontTypeTrueType)
         {
@@ -465,7 +478,7 @@ static uint16_t AddText(float x, float y, const char *s, RGBAColor col, Renderer
         if (pos == input_position && draw_cursor)
         {
             AddChar(x, y, 95, runit, col);
-            verts_added += 4;
+            verts_added += 6;
             draw_cursor = false;
         }
 
@@ -478,7 +491,7 @@ static uint16_t AddText(float x, float y, const char *s, RGBAColor col, Renderer
     if (draw_cursor)
     {
         AddChar(x, y, 95, runit, col);
-        verts_added += 4;
+        verts_added += 6;
     }
 
     return verts_added;
@@ -579,7 +592,7 @@ void ConsoleDrawer(void)
         {
             if (!draw_endoom)
             {
-                console_glvert = BeginRenderUnit(GL_QUADS, kENDOOMTotalVerts, GL_MODULATE, 0,
+                console_glvert = BeginRenderUnit(kENDOOMTotalVerts * 3 / 2, GL_MODULATE, 0,
                                                  (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingNone);
                 draw_endoom    = true;
             }
@@ -593,17 +606,21 @@ void ConsoleDrawer(void)
             {
                 RGBAColor col = kENDOOMColors[(CL->endoom_bytes_[j] >> 4) & 7];
 
+                RendererVertex *cv0        = console_glvert;
                 console_glvert->rgba       = col;
                 console_glvert++->position = {{(float)(x - enwidth), (float)y, 0}};
                 console_glvert->rgba       = col;
                 console_glvert++->position = {{(float)(x - enwidth), (float)(y + FNSZ), 0}};
+                RendererVertex *cv2        = console_glvert;
                 console_glvert->rgba       = col;
                 console_glvert++->position = {{(float)(x + enwidth), (float)(y + FNSZ), 0}};
+                *console_glvert++          = *cv0;
+                *console_glvert++          = *cv2;
                 console_glvert->rgba       = col;
                 console_glvert++->position = {{(float)(x + enwidth), (float)y, 0}};
 
                 x += enwidth * 2;
-                console_verts += 4;
+                console_verts += 6;
 
                 if (x >= current_screen_width)
                     break;
@@ -624,7 +641,7 @@ void ConsoleDrawer(void)
         EndRenderUnit(console_verts);
         console_verts            = 0;
         const ImageFont *en_font = (const ImageFont *)endoom_font;
-        console_glvert           = BeginRenderUnit(GL_QUADS, kENDOOMTotalVerts, GL_MODULATE,
+        console_glvert           = BeginRenderUnit(kENDOOMTotalVerts * 3 / 2, GL_MODULATE,
                                                    ImageCache(en_font->font_image_, true, (const Colormap *)0, true),
                                                    (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingMasked);
         int enwidth              = RoundToInteger((float)en_font->image_monospace_width_ *
@@ -662,21 +679,25 @@ void ConsoleDrawer(void)
                     float ty1 = (float)(py) * 0.0625f;
                     float ty2 = (float)(py + 1) * 0.0625f;
 
+                    RendererVertex *cv0                    = console_glvert;
                     console_glvert->rgba                   = col;
                     console_glvert->texture_coordinates[0] = {{tx1, ty1}};
                     console_glvert++->position             = {{(float)(x - enwidth), (float)y, 0}};
                     console_glvert->rgba                   = col;
                     console_glvert->texture_coordinates[0] = {{tx1, ty2}};
                     console_glvert++->position             = {{(float)(x - enwidth), (float)(y + FNSZ), 0}};
+                    RendererVertex *cv2                    = console_glvert;
                     console_glvert->rgba                   = col;
                     console_glvert->texture_coordinates[0] = {{tx2, ty2}};
                     console_glvert++->position             = {{(float)(x + enwidth), (float)(y + FNSZ), 0}};
+                    *console_glvert++                      = *cv0;
+                    *console_glvert++                      = *cv2;
                     console_glvert->rgba                   = col;
                     console_glvert->texture_coordinates[0] = {{tx2, ty1}};
                     console_glvert++->position             = {{(float)(x + enwidth), (float)y, 0}};
 
                     x += enwidth;
-                    console_verts += 4;
+                    console_verts += 6;
 
                     if (x >= current_screen_width)
                         break;

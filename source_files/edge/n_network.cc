@@ -28,6 +28,7 @@
 #include "e_input.h"
 #include "e_main.h"
 #include "e_player.h"
+#include "edge_profiling.h"
 #include "epi_endian.h"
 #include "epi_str_util.h"
 #include "epi_windows.h"
@@ -208,6 +209,8 @@ int NetworkUpdate()
 
 int TryRunTicCommands()
 {
+    EDGE_ZoneScoped;
+
     if (single_tics)
     {
         PreInput();

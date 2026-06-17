@@ -28,6 +28,7 @@
 #include "deh_rscript.h"
 
 #include "deh_edge.h"
+#include "epi_str_compare.h"
 #include "deh_info.h"
 #include "deh_mobj.h"
 #include "deh_system.h"
@@ -47,8 +48,8 @@ void FinishLump();
 bool IsKeen(int kMT_num);
 
 void CollectMatchingBosses(std::vector<int> &list, int flag);
-void OutputTrigger(const std::string &map, const std::vector<int> &list, bool boss2);
-void HandleLevel(const std::string &map, int flag1, int mt1, int flag2, int mt2);
+void OutputTrigger(const char *map, const std::vector<int> &list, bool boss2);
+void HandleLevel(const char *map, int flag1, int mt1, int flag2, int mt2);
 } // namespace rscript
 
 void rscript::Init()
@@ -104,7 +105,7 @@ void rscript::CollectMatchingBosses(std::vector<int> &list, int flag)
     }
 }
 
-void rscript::OutputTrigger(const std::string &map, const std::vector<int> &list, bool boss2)
+void rscript::OutputTrigger(const char *map, const std::vector<int> &list, bool boss2)
 {
     // when there is no monsters, that is okay, we just don't output any
     // radius trigger (there is nothing it could do).
@@ -123,15 +124,15 @@ void rscript::OutputTrigger(const std::string &map, const std::vector<int> &list
 
     // the command to execute depends on the map...
 
-    if (map == "E1M8")
+    if (epi::StringCompare(map, "E1M8") == 0)
         wad::Printf("    activate_linetype 38 666\n");
-    else if (map == "E2M8")
+    else if (epi::StringCompare(map, "E2M8") == 0)
         wad::Printf("    exit_level 5\n");
-    else if (map == "E3M8")
+    else if (epi::StringCompare(map, "E3M8") == 0)
         wad::Printf("    exit_level 5\n");
-    else if (map == "E4M6")
+    else if (epi::StringCompare(map, "E4M6") == 0)
         wad::Printf("    activate_linetype 2 666\n");
-    else if (map == "E4M8")
+    else if (epi::StringCompare(map, "E4M8") == 0)
         wad::Printf("    activate_linetype 38 666\n");
     else if (!boss2)
         wad::Printf("    activate_linetype 38 666\n"); // MAP07 Mancubus
@@ -141,7 +142,7 @@ void rscript::OutputTrigger(const std::string &map, const std::vector<int> &list
     wad::Printf("  end_radiustrigger\n");
 }
 
-void rscript::HandleLevel(const std::string &map, int flag1, int mt1, int flag2, int mt2)
+void rscript::HandleLevel(const char *map, int flag1, int mt1, int flag2, int mt2)
 {
     std::vector<int> list1;
     std::vector<int> list2;
@@ -163,7 +164,7 @@ void rscript::HandleLevel(const std::string &map, int flag1, int mt1, int flag2,
     if (!different)
         return;
 
-    wad::Printf("START_MAP %s\n", map.c_str());
+    wad::Printf("START_MAP %s\n", map);
 
     if (flag1 != 0)
         OutputTrigger(map, list1, false);

@@ -243,7 +243,7 @@ static void BeginSkyUnit(void)
 {
     total_sky_verts = 0;
     StartUnitBatch(false);
-    sky_glvert       = BeginRenderUnit(GL_TRIANGLES, kMaximumLocalVertices, GL_MODULATE, 0,
+    sky_glvert       = BeginRenderUnit(kMaximumLocalVertices, GL_MODULATE, 0,
                                        (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingNone);
     sky_unit_started = true;
 }
@@ -304,24 +304,25 @@ static void RenderSkySlice(float top, float bottom, float atop, float abottom, f
     RGBAColor topcol    = epi::MakeRGBA(255, 255, 255, (uint8_t)(atop * 255.0f));
     RGBAColor bottomcol = epi::MakeRGBA(255, 255, 255, (uint8_t)(abottom * 255.0f));
 
-    RendererVertex *glvert = BeginRenderUnit(GL_QUADS, 128, GL_MODULATE, sky_tex_id, (GLuint)kTextureEnvironmentDisable,
-                                             0, 0, blend, fc_to_use, fd_to_use);
+    RendererVertex *glvert = BeginRenderUnit(192, GL_MODULATE, sky_tex_id,
+                                             (GLuint)kTextureEnvironmentDisable, 0, 0, blend, fc_to_use, fd_to_use);
 
     // Go through circular points
     for (unsigned a = 0; a < 31; a++)
     {
-        // Top
+        RendererVertex *v0             = glvert;
         glvert->rgba                   = topcol;
         glvert->texture_coordinates[0] = {{tc_x + tx, tc_y1}};
         glvert++->position             = {{(sky_circle[a + 1].X * dist), -(sky_circle[a + 1].Y * dist), (top * dist)}};
         glvert->rgba                   = topcol;
         glvert->texture_coordinates[0] = {{tc_x, tc_y1}};
         glvert++->position             = {{(sky_circle[a].X * dist), -(sky_circle[a].Y * dist), (top * dist)}};
-
-        // Bottom
+        RendererVertex *v2             = glvert;
         glvert->rgba                   = bottomcol;
         glvert->texture_coordinates[0] = {{tc_x, tc_y2}};
         glvert++->position             = {{(sky_circle[a].X * dist), -(sky_circle[a].Y * dist), (bottom * dist)}};
+        *glvert++                      = *v0;
+        *glvert++                      = *v2;
         glvert->rgba                   = bottomcol;
         glvert->texture_coordinates[0] = {{tc_x + tx, tc_y2}};
         glvert++->position = {{(sky_circle[a + 1].X * dist), -(sky_circle[a + 1].Y * dist), (bottom * dist)}};
@@ -330,23 +331,24 @@ static void RenderSkySlice(float top, float bottom, float atop, float abottom, f
     }
 
     // Link last point -> first
-    // Top
+    RendererVertex *v0             = glvert;
     glvert->rgba                   = topcol;
     glvert->texture_coordinates[0] = {{tc_x + tx, tc_y1}};
     glvert++->position             = {{(sky_circle[0].X * dist), -(sky_circle[0].Y * dist), (top * dist)}};
     glvert->rgba                   = topcol;
     glvert->texture_coordinates[0] = {{tc_x, tc_y1}};
     glvert++->position             = {{(sky_circle[31].X * dist), -(sky_circle[31].Y * dist), (top * dist)}};
-
-    // Bottom
+    RendererVertex *v2             = glvert;
     glvert->rgba                   = bottomcol;
     glvert->texture_coordinates[0] = {{tc_x, tc_y2}};
     glvert++->position             = {{(sky_circle[31].X * dist), -(sky_circle[31].Y * dist), (bottom * dist)}};
+    *glvert++                      = *v0;
+    *glvert++                      = *v2;
     glvert->rgba                   = bottomcol;
     glvert->texture_coordinates[0] = {{tc_x + tx, tc_y2}};
     glvert->position               = {{(sky_circle[0].X * dist), -(sky_circle[0].Y * dist), (bottom * dist)}};
 
-    EndRenderUnit(128);
+    EndRenderUnit(192);
 }
 
 static void RenderSkyCylinder(void)
@@ -405,20 +407,24 @@ static void RenderSkyCylinder(void)
     }
 
     // Render top cap
-    RendererVertex *glvert   = BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0,
+    RendererVertex *glvert   = BeginRenderUnit(6, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0,
                                                blend, fc_to_use, fd_to_use);
     RGBAColor       unit_col = sky_cap_color;
 
+    RendererVertex *v0 = glvert;
     glvert->rgba       = unit_col;
     glvert++->position = {{-cap_dist, -cap_dist, cap_z}};
     glvert->rgba       = unit_col;
     glvert++->position = {{-cap_dist, cap_dist, cap_z}};
+    RendererVertex *v2 = glvert;
     glvert->rgba       = unit_col;
     glvert++->position = {{cap_dist, cap_dist, cap_z}};
+    *glvert++          = *v0;
+    *glvert++          = *v2;
     glvert->rgba       = unit_col;
     glvert->position   = {{cap_dist, -cap_dist, cap_z}};
 
-    EndRenderUnit(4);
+    EndRenderUnit(6);
 
     // Render bottom cap
     if (current_sky_stretch > kSkyStretchMirror)
@@ -426,19 +432,23 @@ static void RenderSkyCylinder(void)
     if (current_sky_stretch == kSkyStretchVanilla)
         cap_z = 0;
 
-    glvert = BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0, blend, fc_to_use,
+    glvert = BeginRenderUnit(6, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0, blend, fc_to_use,
                              fd_to_use);
 
+    v0                 = glvert;
     glvert->rgba       = unit_col;
     glvert++->position = {{-cap_dist, -cap_dist, -cap_z}};
     glvert->rgba       = unit_col;
     glvert++->position = {{-cap_dist, cap_dist, -cap_z}};
+    v2                 = glvert;
     glvert->rgba       = unit_col;
     glvert++->position = {{cap_dist, cap_dist, -cap_z}};
+    *glvert++          = *v0;
+    *glvert++          = *v2;
     glvert->rgba       = unit_col;
     glvert->position   = {{cap_dist, -cap_dist, -cap_z}};
 
-    EndRenderUnit(4);
+    EndRenderUnit(6);
 
     // Render skybox sides
 
@@ -649,118 +659,142 @@ static void RenderSkybox(void)
                       (uint8_t)(render_view_blue_multiplier * 255.0f));
     // top
     RendererVertex *glvert =
-        BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, fake_box[SK].texture[kSkyboxTop], (GLuint)kTextureEnvironmentDisable,
-                        0, 0, blend, fc_to_use, fd_to_use);
+        BeginRenderUnit(6, GL_MODULATE, fake_box[SK].texture[kSkyboxTop],
+                        (GLuint)kTextureEnvironmentDisable, 0, 0, blend, fc_to_use, fd_to_use);
 
+    RendererVertex *vA             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v0, v0}};
     glvert++->position             = {{-dist, dist, +dist}};
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v0, v1}};
     glvert++->position             = {{-dist, -dist, +dist}};
+    RendererVertex *vC             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v1, v1}};
     glvert++->position             = {{dist, -dist, +dist}};
+    *glvert++                      = *vA;
+    *glvert++                      = *vC;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v1, v0}};
-    glvert++->position             = {{dist, dist, +dist}};
+    glvert->position               = {{dist, dist, +dist}};
 
-    EndRenderUnit(4);
+    EndRenderUnit(6);
 
     // bottom
-    glvert = BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, fake_box[SK].texture[kSkyboxBottom],
+    glvert = BeginRenderUnit(6, GL_MODULATE, fake_box[SK].texture[kSkyboxBottom],
                              (GLuint)kTextureEnvironmentDisable, 0, 0, blend, fc_to_use, fd_to_use);
 
+    vA                             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v0, v0}};
     glvert++->position             = {{-dist, -dist, -dist}};
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v0, v1}};
     glvert++->position             = {{-dist, dist, -dist}};
+    vC                             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v1, v1}};
     glvert++->position             = {{dist, dist, -dist}};
+    *glvert++                      = *vA;
+    *glvert++                      = *vC;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v1, v0}};
-    glvert++->position             = {{dist, -dist, -dist}};
+    glvert->position               = {{dist, -dist, -dist}};
 
-    EndRenderUnit(4);
+    EndRenderUnit(6);
 
     // north
-    glvert = BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, fake_box[SK].texture[kSkyboxNorth],
+    glvert = BeginRenderUnit(6, GL_MODULATE, fake_box[SK].texture[kSkyboxNorth],
                              (GLuint)kTextureEnvironmentDisable, 0, 0, blend, fc_to_use, fd_to_use);
 
+    vA                             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v0, v0}};
     glvert++->position             = {{-dist, dist, -dist}};
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v0, v1}};
     glvert++->position             = {{-dist, dist, +dist}};
+    vC                             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v1, v1}};
     glvert++->position             = {{dist, dist, +dist}};
+    *glvert++                      = *vA;
+    *glvert++                      = *vC;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v1, v0}};
-    glvert++->position             = {{dist, dist, -dist}};
+    glvert->position               = {{dist, dist, -dist}};
 
-    EndRenderUnit(4);
+    EndRenderUnit(6);
 
     // east
-    glvert = BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, fake_box[SK].texture[kSkyboxEast],
+    glvert = BeginRenderUnit(6, GL_MODULATE, fake_box[SK].texture[kSkyboxEast],
                              (GLuint)kTextureEnvironmentDisable, 0, 0, blend, fc_to_use, fd_to_use);
 
+    vA                             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v0, v0}};
     glvert++->position             = {{dist, dist, -dist}};
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v0, v1}};
     glvert++->position             = {{dist, dist, +dist}};
+    vC                             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v1, v1}};
     glvert++->position             = {{dist, -dist, +dist}};
+    *glvert++                      = *vA;
+    *glvert++                      = *vC;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v1, v0}};
-    glvert++->position             = {{dist, -dist, -dist}};
+    glvert->position               = {{dist, -dist, -dist}};
 
-    EndRenderUnit(4);
+    EndRenderUnit(6);
 
     // south
-    glvert = BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, fake_box[SK].texture[kSkyboxSouth],
+    glvert = BeginRenderUnit(6, GL_MODULATE, fake_box[SK].texture[kSkyboxSouth],
                              (GLuint)kTextureEnvironmentDisable, 0, 0, blend, fc_to_use, fd_to_use);
 
+    vA                             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v0, v0}};
     glvert++->position             = {{dist, -dist, -dist}};
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v0, v1}};
     glvert++->position             = {{dist, -dist, +dist}};
+    vC                             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v1, v1}};
     glvert++->position             = {{-dist, -dist, +dist}};
+    *glvert++                      = *vA;
+    *glvert++                      = *vC;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v1, v0}};
-    glvert++->position             = {{-dist, -dist, -dist}};
+    glvert->position               = {{-dist, -dist, -dist}};
 
-    EndRenderUnit(4);
+    EndRenderUnit(6);
 
     // west
-    glvert = BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, fake_box[SK].texture[kSkyboxWest],
+    glvert = BeginRenderUnit(6, GL_MODULATE, fake_box[SK].texture[kSkyboxWest],
                              (GLuint)kTextureEnvironmentDisable, 0, 0, blend, fc_to_use, fd_to_use);
 
+    vA                             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v0, v0}};
     glvert++->position             = {{-dist, -dist, -dist}};
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v0, v1}};
     glvert++->position             = {{-dist, -dist, +dist}};
+    vC                             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v1, v1}};
     glvert++->position             = {{-dist, dist, +dist}};
+    *glvert++                      = *vA;
+    *glvert++                      = *vC;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{v1, v0}};
-    glvert++->position             = {{-dist, dist, -dist}};
+    glvert->position               = {{-dist, dist, -dist}};
 
-    EndRenderUnit(4);
+    EndRenderUnit(6);
 }
 
 static void FinishSkyUnit(void)
@@ -877,7 +911,7 @@ void RenderSkyPlane(Subsector *sub, float h)
         EndRenderUnit(total_sky_verts);
         FinishUnitBatch();
         StartUnitBatch(false);
-        sky_glvert      = BeginRenderUnit(GL_TRIANGLES, kMaximumLocalVertices, GL_MODULATE, 0,
+        sky_glvert      = BeginRenderUnit(kMaximumLocalVertices, GL_MODULATE, 0,
                                           (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingNone);
         total_sky_verts = 0;
     }
@@ -924,7 +958,7 @@ void RenderSkyWall(Seg *seg, float h1, float h2)
         EndRenderUnit(total_sky_verts);
         FinishUnitBatch();
         StartUnitBatch(false);
-        sky_glvert      = BeginRenderUnit(GL_TRIANGLES, kMaximumLocalVertices, GL_MODULATE, 0,
+        sky_glvert      = BeginRenderUnit(kMaximumLocalVertices, GL_MODULATE, 0,
                                           (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingNone);
         total_sky_verts = 0;
     }

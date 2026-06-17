@@ -27,14 +27,16 @@
 
 #include <math.h>
 
+#include "epi_simd.h"
+
 #include <unordered_map>
 #include <unordered_set>
 
 #include "AlmostEquals.h"
 #include "dm_defs.h"
 #include "dm_state.h"
+#include "edge_profiling.h"
 #include "epi.h"
-#include "epi_doomdefs.h"
 #include "g_game.h"
 #include "i_defs_gl.h"
 #include "m_bbox.h"
@@ -275,6 +277,65 @@ static void WallCoordFunc(void *d, int v_idx, HMM_Vec3 *pos, RGBAColor *rgb, HMM
     *lit_pos = *pos;
 }
 
+static void WallCoordFuncBatch(void *d, int v_base, HMM_Vec3 pos[4], RGBAColor rgb[4], HMM_Vec2 texc[4],
+                                HMM_Vec3 normal[4], HMM_Vec3 lit_pos[4])
+{
+    const WallCoordinateData *data = (WallCoordinateData *)d;
+
+    pos[0] = data->vertices[v_base + 0];
+    pos[1] = data->vertices[v_base + 1];
+    pos[2] = data->vertices[v_base + 2];
+    pos[3] = data->vertices[v_base + 3];
+
+    normal[0] = normal[1] = normal[2] = normal[3] = data->normal;
+
+    RGBAColor base_col;
+    if (swirl_pass > 1)
+        base_col = epi::MakeRGBA((uint8_t)(255.0f / data->R * render_view_red_multiplier),
+                                 (uint8_t)(255.0f / data->G * render_view_green_multiplier),
+                                 (uint8_t)(255.0f / data->B * render_view_blue_multiplier), 0);
+    else
+        base_col = epi::MakeRGBA((uint8_t)(data->R * render_view_red_multiplier),
+                                 (uint8_t)(data->G * render_view_green_multiplier),
+                                 (uint8_t)(data->B * render_view_blue_multiplier), 0);
+
+    for (int k = 0; k < 4; k++)
+        rgb[k] = (base_col & 0xFFFFFF00u) | (rgb[k] & 0xFFu);
+
+    bool  use_x     = fabs(data->div.delta_x) > fabs(data->div.delta_y);
+    float origin    = use_x ? data->div.x : data->div.y;
+    float inv_delta = use_x ? (1.0f / data->div.delta_x) : (1.0f / data->div.delta_y);
+
+    epi::SimdF32x4 pos_v;
+    if (use_x)
+        pos_v = epi::SetF32x4(pos[0].X, pos[1].X, pos[2].X, pos[3].X);
+    else
+        pos_v = epi::SetF32x4(pos[0].Y, pos[1].Y, pos[2].Y, pos[3].Y);
+
+    epi::SimdF32x4 along_v =
+        epi::MulF32x4(epi::SubF32x4(pos_v, epi::SplatF32x4(origin)), epi::SplatF32x4(inv_delta));
+
+    epi::SimdF32x4 texc_x =
+        epi::AddF32x4(epi::SplatF32x4(data->tx0), epi::MulF32x4(along_v, epi::SplatF32x4(data->tx_mul)));
+
+    epi::SimdF32x4 pos_z_v = epi::SetF32x4(pos[0].Z, pos[1].Z, pos[2].Z, pos[3].Z);
+    epi::SimdF32x4 texc_y =
+        epi::AddF32x4(epi::SplatF32x4(data->ty0), epi::MulF32x4(pos_z_v, epi::SplatF32x4(data->ty_mul)));
+
+    float tx[4], ty[4];
+    epi::StoreF32x4(tx, texc_x);
+    epi::StoreF32x4(ty, texc_y);
+
+    for (int k = 0; k < 4; k++)
+    {
+        texc[k].X = tx[k];
+        texc[k].Y = ty[k];
+        if (swirl_pass > 0)
+            CalcTurbulentTexCoords(&texc[k], &pos[k]);
+        lit_pos[k] = pos[k];
+    }
+}
+
 struct PlaneCoordinateData
 {
     int             v_count;
@@ -345,6 +406,75 @@ static void PlaneCoordFunc(void *d, int v_idx, HMM_Vec3 *pos, RGBAColor *rgb, HM
     *lit_pos = *pos;
 }
 
+static void PlaneCoordFuncBatch(void *d, int v_base, HMM_Vec3 pos[4], RGBAColor rgb[4], HMM_Vec2 texc[4],
+                                 HMM_Vec3 normal[4], HMM_Vec3 lit_pos[4])
+{
+    PlaneCoordinateData *data = (PlaneCoordinateData *)d;
+
+    pos[0] = data->vertices[v_base + 0];
+    pos[1] = data->vertices[v_base + 1];
+    pos[2] = data->vertices[v_base + 2];
+    pos[3] = data->vertices[v_base + 3];
+
+    normal[0] = normal[1] = normal[2] = normal[3] = data->normal;
+
+    RGBAColor base_col;
+    if (swirl_pass > 1)
+        base_col = epi::MakeRGBA((uint8_t)(255.0f / data->R * render_view_red_multiplier),
+                                 (uint8_t)(255.0f / data->G * render_view_green_multiplier),
+                                 (uint8_t)(255.0f / data->B * render_view_blue_multiplier), 0);
+    else
+        base_col = epi::MakeRGBA((uint8_t)(data->R * render_view_red_multiplier),
+                                 (uint8_t)(data->G * render_view_green_multiplier),
+                                 (uint8_t)(data->B * render_view_blue_multiplier), 0);
+
+    for (int k = 0; k < 4; k++)
+        rgb[k] = (base_col & 0xFFFFFF00u) | (rgb[k] & 0xFFu);
+
+    epi::SimdF32x4 rxy_x =
+        epi::AddF32x4(epi::SplatF32x4(data->tx0), epi::SetF32x4(pos[0].X, pos[1].X, pos[2].X, pos[3].X));
+    epi::SimdF32x4 rxy_y =
+        epi::AddF32x4(epi::SplatF32x4(data->ty0), epi::SetF32x4(pos[0].Y, pos[1].Y, pos[2].Y, pos[3].Y));
+
+    if (data->rotation)
+    {
+        float        angle = epi::RadiansFromBAM(data->rotation);
+        float        cos_a = cosf(angle);
+        float        sin_a = sinf(angle);
+        epi::SimdF32x4 cos_v = epi::SplatF32x4(cos_a);
+        epi::SimdF32x4 sin_v = epi::SplatF32x4(sin_a);
+        epi::SimdF32x4 new_x = epi::SubF32x4(epi::MulF32x4(rxy_x, cos_v), epi::MulF32x4(rxy_y, sin_v));
+        epi::SimdF32x4 new_y = epi::AddF32x4(epi::MulF32x4(rxy_x, sin_v), epi::MulF32x4(rxy_y, cos_v));
+        rxy_x              = new_x;
+        rxy_y              = new_y;
+    }
+
+    float inv_w = 1.0f / data->image_w;
+    float inv_h = 1.0f / data->image_h;
+    rxy_x       = epi::MulF32x4(rxy_x, epi::SplatF32x4(inv_w));
+    rxy_y       = epi::MulF32x4(rxy_y, epi::SplatF32x4(inv_h));
+
+    epi::SimdF32x4 texc_x = epi::AddF32x4(epi::MulF32x4(rxy_x, epi::SplatF32x4(data->x_mat.X)),
+                                         epi::MulF32x4(rxy_y, epi::SplatF32x4(data->x_mat.Y)));
+    epi::SimdF32x4 texc_y = epi::AddF32x4(epi::MulF32x4(rxy_x, epi::SplatF32x4(data->y_mat.X)),
+                                         epi::MulF32x4(rxy_y, epi::SplatF32x4(data->y_mat.Y)));
+
+    float tx[4], ty[4];
+    epi::StoreF32x4(tx, texc_x);
+    epi::StoreF32x4(ty, texc_y);
+
+    for (int k = 0; k < 4; k++)
+    {
+        texc[k].X = tx[k];
+        texc[k].Y = ty[k];
+        if (swirl_pass > 0)
+            CalcTurbulentTexCoords(&texc[k], &pos[k]);
+        if (data->bob_amount > 0)
+            pos[k].Z += (plane_z_bob * data->bob_amount);
+        lit_pos[k] = pos[k];
+    }
+}
+
 static void DLIT_Wall(MapObject *mo, void *dataptr)
 {
     WallCoordinateData *data = (WallCoordinateData *)dataptr;
@@ -369,7 +499,7 @@ static void DLIT_Wall(MapObject *mo, void *dataptr)
     BlendingMode blending = (BlendingMode)((data->blending & ~kBlendingAlpha) | kBlendingAdd);
 
     mo->dynamic_light_.shader->WorldMix(GL_POLYGON, data->v_count, data->tex_id, data->trans, &data->pass, blending,
-                                        data->mid_masked, data, WallCoordFunc);
+                                        data->mid_masked, data, WallCoordFunc, WallCoordFuncBatch);
 }
 
 static void GLOWLIT_Wall(MapObject *mo, void *dataptr)
@@ -381,7 +511,7 @@ static void GLOWLIT_Wall(MapObject *mo, void *dataptr)
     BlendingMode blending = (BlendingMode)((data->blending & ~kBlendingAlpha) | kBlendingAdd);
 
     mo->dynamic_light_.shader->WorldMix(GL_POLYGON, data->v_count, data->tex_id, data->trans, &data->pass, blending,
-                                        data->mid_masked, data, WallCoordFunc);
+                                        data->mid_masked, data, WallCoordFunc, WallCoordFuncBatch);
 }
 
 static void DLIT_Plane(MapObject *mo, void *dataptr)
@@ -408,7 +538,7 @@ static void DLIT_Plane(MapObject *mo, void *dataptr)
     BlendingMode blending = (BlendingMode)((data->blending & ~kBlendingAlpha) | kBlendingAdd);
 
     mo->dynamic_light_.shader->WorldMix(GL_POLYGON, data->v_count, data->tex_id, data->trans, &data->pass, blending,
-                                        false /* masked */, data, PlaneCoordFunc);
+                                        false /* masked */, data, PlaneCoordFunc, PlaneCoordFuncBatch);
 }
 
 static void GLOWLIT_Plane(MapObject *mo, void *dataptr)
@@ -420,7 +550,7 @@ static void GLOWLIT_Plane(MapObject *mo, void *dataptr)
     BlendingMode blending = (BlendingMode)((data->blending & ~kBlendingAlpha) | kBlendingAdd);
 
     mo->dynamic_light_.shader->WorldMix(GL_POLYGON, data->v_count, data->tex_id, data->trans, &data->pass, blending,
-                                        false, data, PlaneCoordFunc);
+                                        false, data, PlaneCoordFunc, PlaneCoordFuncBatch);
 }
 
 static inline void GreetNeighbourSector(float *hts, int &num, VertexSectorList *seclist)
@@ -660,7 +790,7 @@ static void DrawWallPart(DrawFloor *dfloor, float x1, float y1, float lz1, float
     AbstractShader *cmap_shader = GetColormapShader(props, lit_adjust, current_subsector->sector);
 
     cmap_shader->WorldMix(GL_POLYGON, data.v_count, data.tex_id, trans, &data.pass, data.blending, data.mid_masked,
-                          &data, WallCoordFunc);
+                          &data, WallCoordFunc, WallCoordFuncBatch);
 
     if (surf->image && surf->image->liquid_type_ > kLiquidImageNone && swirling_flats == kLiquidSwirlParallax)
     {
@@ -672,7 +802,7 @@ static void DrawWallPart(DrawFloor *dfloor, float x1, float y1, float lz1, float
         data.blending          = (BlendingMode)(kBlendingMasked | kBlendingAlpha);
         data.trans             = 85;
         cmap_shader->WorldMix(GL_POLYGON, data.v_count, data.tex_id, 0.33f, &data.pass, data.blending, false, &data,
-                              WallCoordFunc);
+                              WallCoordFunc, WallCoordFuncBatch);
         data.blending = old_blend;
         data.trans    = old_dt;
     }
@@ -865,6 +995,8 @@ static void DrawGlass(DrawFloor *dfloor, float c, float f, float tex_top_h, MapS
 static void DrawTile(Seg *seg, DrawFloor *dfloor, float lz1, float lz2, float rz1, float rz2, float tex_z, int flags,
                      MapSurface *surf)
 {
+    EDGE_ZoneScoped;
+
     // tex_z = texturing top, in world coordinates
 
     const Image *image = surf->image;
@@ -977,6 +1109,8 @@ static inline float SafeImageHeight(const Image *image)
 static void ComputeWallTiles(Seg *seg, DrawFloor *dfloor, int sidenum, float f_min, float c_max,
                              bool mirror_sub = false)
 {
+    EDGE_ZoneScoped;
+
     Line       *ld = seg->linedef;
     Side       *sd = ld->side[sidenum];
     Sector     *sec, *other;
@@ -1531,6 +1665,8 @@ static void RenderSeg(DrawFloor *dfloor, Seg *seg, bool mirror_sub = false)
 
 static void RenderPlane(DrawFloor *dfloor, float h, MapSurface *surf, int face_dir)
 {
+    EDGE_ZoneScoped;
+
     float orig_h = h;
 
     render_mirror_set.Height(h);
@@ -1716,7 +1852,7 @@ static void RenderPlane(DrawFloor *dfloor, float h, MapSurface *surf, int face_d
     AbstractShader *cmap_shader = GetColormapShader(props, 0, current_subsector->sector);
 
     cmap_shader->WorldMix(GL_POLYGON, data.v_count, data.tex_id, trans, &data.pass, data.blending, false /* masked */,
-                          &data, PlaneCoordFunc);
+                          &data, PlaneCoordFunc, PlaneCoordFuncBatch);
 
     if (surf->image->liquid_type_ > kLiquidImageNone &&
         swirling_flats == kLiquidSwirlParallax) // Kept as an example for future effects
@@ -1729,7 +1865,7 @@ static void RenderPlane(DrawFloor *dfloor, float h, MapSurface *surf, int face_d
         data.blending          = (BlendingMode)(kBlendingMasked | kBlendingAlpha);
         data.trans             = 0.33f;
         cmap_shader->WorldMix(GL_POLYGON, data.v_count, data.tex_id, 0.33f, &data.pass, data.blending, false, &data,
-                              PlaneCoordFunc);
+                              PlaneCoordFunc, PlaneCoordFuncBatch);
         data.blending = old_blend;
         data.trans    = old_dt;
     }
@@ -1779,6 +1915,8 @@ void RenderSubList(std::list<DrawSubsector *> &dsubs, bool for_mirror)
 
 static void RenderSubsector(DrawSubsector *dsub, bool mirror_sub)
 {
+    EDGE_ZoneScoped;
+
     Subsector *sub = dsub->subsector;
 
 #if (DEBUG >= 1)
@@ -2030,6 +2168,8 @@ void UpdateSectorInterpolation(Sector *sector)
 //
 void RenderTrueBSP(void)
 {
+    EDGE_ZoneScoped;
+
     FuzzUpdate();
 
     ClearBSP();
@@ -2259,6 +2399,8 @@ void RenderTrueBSP(void)
 
 void RenderView(int x, int y, int w, int h, MapObject *camera, bool full_height, float expand_w)
 {
+    EDGE_ZoneScoped;
+
     view_window_x      = x;
     view_window_y      = y;
     view_window_width  = w;
@@ -2380,6 +2522,8 @@ static void DLIT_Flood(MapObject *mo, void *dataptr)
 
 void EmulateFloodPlane(const DrawFloor *dfloor, const Sector *flood_ref, int face_dir, float h1, float h2)
 {
+    EDGE_ZoneScoped;
+
     EPI_UNUSED(dfloor);
 
     if (render_mirror_set.TotalActive() > 0)

@@ -206,55 +206,62 @@ static void RendererWipeFading(float how_far)
 {
     RGBAColor unit_col = epi::MakeRGBA(255, 255, 255, (uint8_t)(1.0f - how_far * 255.0f));
 
-    RendererVertex *glvert = BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, current_wipe_texture,
+    RendererVertex *glvert = BeginRenderUnit(6, GL_MODULATE, current_wipe_texture,
                                              (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingAlpha);
 
+    RendererVertex *v0             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{0.0f, 0.0f}};
     glvert++->position             = {{0, 0, 0}};
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{0.0f, current_wipe_top}};
     glvert++->position             = {{0, (float)current_screen_height, 0}};
+    RendererVertex *v2             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{current_wipe_right, current_wipe_top}};
     glvert++->position             = {{(float)current_screen_width, (float)current_screen_height, 0}};
+    *glvert++                      = *v0;
+    *glvert++                      = *v2;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{current_wipe_right, 0.0f}};
     glvert->position               = {{(float)current_screen_width, 0, 0}};
 
-    EndRenderUnit(4);
+    EndRenderUnit(6);
 }
 
 static void RendererWipePixelfade(float how_far)
 {
     RGBAColor unit_col = epi::MakeRGBA(255, 255, 255, (uint8_t)(1.0f - how_far * 255.0f));
 
-    RendererVertex *glvert = BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, current_wipe_texture,
+    RendererVertex *glvert = BeginRenderUnit(6, GL_MODULATE, current_wipe_texture,
                                              (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingGEqual);
 
+    RendererVertex *v0             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{0.0f, 0.0f}};
     glvert++->position             = {{0, 0, 0}};
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{0.0f, current_wipe_top}};
     glvert++->position             = {{0, (float)current_screen_height, 0}};
+    RendererVertex *v2             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{current_wipe_right, current_wipe_top}};
     glvert++->position             = {{(float)current_screen_width, (float)current_screen_height, 0}};
+    *glvert++                      = *v0;
+    *glvert++                      = *v2;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{current_wipe_right, 0.0f}};
     glvert->position               = {{(float)current_screen_width, 0, 0}};
 
-    EndRenderUnit(4);
+    EndRenderUnit(6);
 }
 
 static void RendererWipeMelt(void)
 {
-    RGBAColor       unit_col = kRGBAWhite;
-    RendererVertex *glvert = BeginRenderUnit(GL_QUAD_STRIP, (kMeltSections + 1) * 2, GL_MODULATE, current_wipe_texture,
-                                             (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingNone);
+    RGBAColor      unit_col = kRGBAWhite;
+    RendererVertex temp[(kMeltSections + 1) * 2];
 
-    for (int x = 0; x <= kMeltSections; x++, glvert++)
+    for (int x = 0; x <= kMeltSections; x++)
     {
         int yoffs = HMM_MAX(0, HMM_Lerp(old_melt_yoffs[x], fractional_tic, melt_yoffs[x]));
 
@@ -263,15 +270,28 @@ static void RendererWipeMelt(void)
 
         float tx = current_wipe_right * (float)x / kMeltSections;
 
-        glvert->rgba                   = unit_col;
-        glvert->texture_coordinates[0] = {{tx, current_wipe_top}};
-        glvert++->position             = {{sx, sy, 0}};
-        glvert->rgba                   = unit_col;
-        glvert->texture_coordinates[0] = {{tx, 0.0f}};
-        glvert->position               = {{sx, sy - current_screen_height, 0}};
+        temp[x * 2].rgba                   = unit_col;
+        temp[x * 2].texture_coordinates[0] = {{tx, current_wipe_top}};
+        temp[x * 2].position               = {{sx, sy, 0}};
+        temp[x * 2 + 1].rgba                   = unit_col;
+        temp[x * 2 + 1].texture_coordinates[0] = {{tx, 0.0f}};
+        temp[x * 2 + 1].position               = {{sx, sy - current_screen_height, 0}};
     }
 
-    EndRenderUnit((kMeltSections + 1) * 2);
+    RendererVertex *glvert = BeginRenderUnit(kMeltSections * 6, GL_MODULATE, current_wipe_texture,
+                                             (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingNone);
+
+    for (int k = 0; k < kMeltSections; k++)
+    {
+        *glvert++ = temp[k * 2];
+        *glvert++ = temp[k * 2 + 1];
+        *glvert++ = temp[k * 2 + 3];
+        *glvert++ = temp[k * 2];
+        *glvert++ = temp[k * 2 + 3];
+        *glvert++ = temp[k * 2 + 2];
+    }
+
+    EndRenderUnit(kMeltSections * 6);
 }
 
 static void RendererWipeSlide(float how_far, float dx, float dy)
@@ -281,23 +301,27 @@ static void RendererWipeSlide(float how_far, float dx, float dy)
 
     RGBAColor unit_col = kRGBAWhite;
 
-    RendererVertex *glvert = BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, current_wipe_texture,
+    RendererVertex *glvert = BeginRenderUnit(6, GL_MODULATE, current_wipe_texture,
                                              (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingNone);
 
+    RendererVertex *v0             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{0.0f, 0.0f}};
     glvert++->position             = {{dx, dy, 0}};
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{0.0f, current_wipe_top}};
     glvert++->position             = {{dx, dy + current_screen_height, 0}};
+    RendererVertex *v2             = glvert;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{current_wipe_right, current_wipe_top}};
     glvert++->position             = {{dx + current_screen_width, dy + current_screen_height, 0}};
+    *glvert++                      = *v0;
+    *glvert++                      = *v2;
     glvert->rgba                   = unit_col;
     glvert->texture_coordinates[0] = {{current_wipe_right, 0.0f}};
     glvert->position               = {{dx + current_screen_width, dy, 0}};
 
-    EndRenderUnit(4);
+    EndRenderUnit(6);
 }
 
 static void RendererWipeDoors(float how_far)
@@ -324,25 +348,37 @@ static void RendererWipeDoors(float how_far)
             float v_y1 = (side == 0) ? (dy * e) : (dy * (e + 0.2f));
             float v_y2 = (side == 1) ? (dy * e) : (dy * (e + 0.2f));
 
-            glvert = BeginRenderUnit(GL_QUAD_STRIP, 12, GL_MODULATE, current_wipe_texture,
-                                     (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingNone);
+            RendererVertex temp[12];
 
-            for (int row = 0; row <= 5; row++, glvert++)
+            for (int row = 0; row <= 5; row++)
             {
                 float t_y = current_wipe_top * row / 5.0f;
 
                 float j1 = (current_screen_height - v_y1 * 2.0f) / 5.0f;
                 float j2 = (current_screen_height - v_y2 * 2.0f) / 5.0f;
 
-                glvert->rgba                   = unit_col;
-                glvert->texture_coordinates[0] = {{t_x2 * current_wipe_right, t_y}};
-                glvert++->position             = {{v_x2, v_y2 + j2 * row, 0}};
-                glvert->rgba                   = unit_col;
-                glvert->texture_coordinates[0] = {{t_x1 * current_wipe_right, t_y}};
-                glvert->position               = {{v_x1, v_y1 + j1 * row, 0}};
+                temp[row * 2].rgba                   = unit_col;
+                temp[row * 2].texture_coordinates[0] = {{t_x2 * current_wipe_right, t_y}};
+                temp[row * 2].position               = {{v_x2, v_y2 + j2 * row, 0}};
+                temp[row * 2 + 1].rgba                   = unit_col;
+                temp[row * 2 + 1].texture_coordinates[0] = {{t_x1 * current_wipe_right, t_y}};
+                temp[row * 2 + 1].position               = {{v_x1, v_y1 + j1 * row, 0}};
             }
 
-            EndRenderUnit(12);
+            glvert = BeginRenderUnit(30, GL_MODULATE, current_wipe_texture,
+                                     (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingNone);
+
+            for (int k = 0; k < 5; k++)
+            {
+                *glvert++ = temp[k * 2];
+                *glvert++ = temp[k * 2 + 1];
+                *glvert++ = temp[k * 2 + 3];
+                *glvert++ = temp[k * 2];
+                *glvert++ = temp[k * 2 + 3];
+                *glvert++ = temp[k * 2 + 2];
+            }
+
+            EndRenderUnit(30);
         }
     }
 }

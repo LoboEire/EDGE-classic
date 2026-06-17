@@ -16,6 +16,7 @@
 //
 //----------------------------------------------------------------------------
 
+#include "epi_simd.h"
 #include "epi_str_hash.h"
 
 namespace epi
@@ -24,6 +25,7 @@ namespace epi
 // Various (if needed) EPI startup functions
 void Initialize(void)
 {
+    EnableFastFloats();
 #ifdef EDGE_EXTRA_CHECKS
     StringHash::RegisterKnownStrings();
 #endif

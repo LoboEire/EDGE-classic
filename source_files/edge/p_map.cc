@@ -43,7 +43,6 @@
 #include "dm_defs.h"
 #include "dm_state.h"
 #include "epi.h"
-#include "epi_doomdefs.h"
 #include "g_game.h"
 #include "m_bbox.h"
 #include "m_math.h" // Vert slope intercept check

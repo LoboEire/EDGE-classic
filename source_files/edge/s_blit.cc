@@ -30,6 +30,7 @@
 #include "AlmostEquals.h"
 #include "con_var.h"
 #include "dm_state.h"
+#include "edge_profiling.h"
 #include "epi.h"
 #include "epi_sdl.h"
 #include "i_sound.h"
@@ -122,6 +123,8 @@ void KillSoundChannel(int k)
 
 void UpdateSounds(MapObject *listener, BAMAngle angle)
 {
+    EDGE_ZoneScoped;
+
     ma_sound_group_set_volume(&sfx_node, sound_effect_volume.f_ * 0.5f);
 
     listen_x = listener ? listener->x : 0;

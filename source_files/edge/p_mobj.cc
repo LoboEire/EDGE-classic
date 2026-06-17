@@ -2224,13 +2224,21 @@ void RunMapObjectThinkers()
         {
             if (time_stop_active)
                 continue;
-            if (!distance_cull_thinkers.d_ ||
-                (game_tic / 2 %
-                     RoundToInteger(1 + PointToDistance(players[console_player]->map_object_->x,
-                                                        players[console_player]->map_object_->y, mo->x, mo->y) /
-                                            1500) ==
-                 0))
+            if (!distance_cull_thinkers.d_)
+            {
                 P_MobjThinker(mo);
+            }
+            else
+            {
+                int cull_skip = RoundToInteger(1 + ApproximateDistance(mo->x - players[console_player]->map_object_->x,
+                                                                        mo->y - players[console_player]->map_object_->y) /
+                                                       1500);
+                if (game_tic % cull_skip == 0)
+                {
+                    mo->tic_skip_ += cull_skip - 1;
+                    P_MobjThinker(mo);
+                }
+            }
         }
     }
 }

@@ -40,3 +40,5 @@ source_files/glew/glew.pc
 
 # WSL files created when exploring linux filesystem
 *Zone.Identifier
+
+!/libraries/tracy/*.exe

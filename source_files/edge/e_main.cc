@@ -48,6 +48,7 @@
 #include "dm_state.h"
 #include "dstrings.h"
 #include "e_input.h"
+#include "edge_profiling.h"
 #include "epi_file.h"
 #include "epi_filesystem.h"
 #include "epi_sdl.h"
@@ -279,8 +280,8 @@ class StartupProgress
 
             StartUnitBatch(false);
 
-            RendererVertex *glvert = BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0,
-                                                     0, kBlendingNegativeGamma);
+            RendererVertex *glvert = BeginRenderUnit(6, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable,
+                                                     0, 0, kBlendingNegativeGamma);
 
             float x1 = 0;
             float x2 = current_screen_width;
@@ -288,16 +289,20 @@ class StartupProgress
             float y1 = current_screen_height;
             float y2 = 0;
 
+            RendererVertex *v0 = glvert;
             glvert->rgba       = unit_col;
             glvert++->position = {{x1, y1, 0}};
             glvert->rgba       = unit_col;
             glvert++->position = {{x2, y1, 0}};
+            RendererVertex *v2 = glvert;
             glvert->rgba       = unit_col;
             glvert++->position = {{x2, y2, 0}};
+            *glvert++          = *v0;
+            *glvert++          = *v2;
             glvert->rgba       = unit_col;
             glvert->position   = {{x1, y2, 0}};
 
-            EndRenderUnit(4);
+            EndRenderUnit(6);
 
             FinishUnitBatch();
         }
@@ -309,8 +314,8 @@ class StartupProgress
 
             StartUnitBatch(false);
 
-            RendererVertex *glvert = BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0,
-                                                     0, kBlendingPositiveGamma);
+            RendererVertex *glvert = BeginRenderUnit(6, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable,
+                                                     0, 0, kBlendingPositiveGamma);
 
             float x1 = 0;
             float x2 = current_screen_width;
@@ -318,16 +323,20 @@ class StartupProgress
             float y1 = current_screen_height;
             float y2 = 0;
 
+            RendererVertex *v0 = glvert;
             glvert->rgba       = unit_col;
             glvert++->position = {{x1, y1, 0}};
             glvert->rgba       = unit_col;
             glvert++->position = {{x2, y1, 0}};
+            RendererVertex *v2 = glvert;
             glvert->rgba       = unit_col;
             glvert++->position = {{x2, y2, 0}};
+            *glvert++          = *v0;
+            *glvert++          = *v2;
             glvert->rgba       = unit_col;
             glvert->position   = {{x1, y2, 0}};
 
-            EndRenderUnit(4);
+            EndRenderUnit(6);
 
             FinishUnitBatch();
         }
@@ -638,6 +647,8 @@ static bool wipe_gl_active = false;
 
 void EdgeDisplay(void)
 {
+    EDGE_ZoneScoped;
+
     // Start the frame - should we need to.
     StartFrame();
 
@@ -662,8 +673,14 @@ void EdgeDisplay(void)
                 CreateSaveScreenshot();
                 need_save_screenshot = false;
             }
-            HUDDrawer();
-            ScriptDrawer();
+            {
+                EDGE_ZoneNamedN(ZoneHUDDrawer, "HUDDrawer", true);
+                HUDDrawer();
+            }
+            {
+                EDGE_ZoneNamedN(ZoneScriptDrawer, "ScriptDrawer", true);
+                ScriptDrawer();
+            }
             break;
 
         case kGameStateIntermission:
@@ -682,54 +699,73 @@ void EdgeDisplay(void)
             break;
         }
 
-        if (wipe_gl_active)
         {
-            // -AJA- Wipe code for GL.  Sorry for all this ugliness, but it just
-            //       didn't fit into the existing wipe framework.
-            if (DoWipe())
+            EDGE_ZoneNamedN(ZoneWipe, "Wipe", true);
+
+            if (wipe_gl_active)
             {
-                StopWipe();
-                wipe_gl_active = false;
+                // -AJA- Wipe code for GL.  Sorry for all this ugliness, but it just
+                //       didn't fit into the existing wipe framework.
+                if (DoWipe())
+                {
+                    StopWipe();
+                    wipe_gl_active = false;
+                }
             }
-        }
 
-        // save the current screen if about to wipe
-        if (need_wipe)
-        {
-            need_wipe      = false;
-            wipe_gl_active = true;
+            // save the current screen if about to wipe
+            if (need_wipe)
+            {
+                need_wipe      = false;
+                wipe_gl_active = true;
 
-            InitializeWipe(wipe_method);
+                InitializeWipe(wipe_method);
+            }
         }
 
         if (paused)
             DisplayPauseImage();
 
-        // menus go directly to the screen
-        if (draw_menu)
         {
-            MenuDrawer(); // menu is drawn even on top of everything (except console)
+            EDGE_ZoneNamedN(ZoneDrawMenu, "DrawMenu", true);
+
+            // menus go directly to the screen
+            if (draw_menu)
+            {
+                MenuDrawer(); // menu is drawn even on top of everything (except console)
+            }
         }
     }
     else
     {
+        EDGE_ZoneNamedN(ZoneMovieDrawer, "MovieDrawer", true);
         MovieDrawer();
     }
 
     // process mouse and keyboard events
-    NetworkUpdate();
-
-    if (!playing_movie)
-        ConsoleDrawer();
-
-    if (!need_wipe && epi::StringCompare(video_overlay.s_, "None") != 0)
     {
-        ImageData   *ov_data = available_overlays[video_overlay.s_].first;
-        unsigned int tex_id  = available_overlays[video_overlay.s_].second;
-        if (ov_data && tex_id)
-            HUDRawFromTexID(0, 0, current_screen_width, current_screen_height, tex_id, kOpacityComplex, 0, 0,
-                            (float)current_screen_width / ov_data->width_,
-                            (float)current_screen_height / ov_data->height_, HUDGetAlpha());
+        EDGE_ZoneNamedN(ZoneNetworkUpdate, "NetworkUpdate", true);
+        NetworkUpdate();
+    }
+
+    {
+        EDGE_ZoneNamedN(ZoneConsoleDraw, "ConsoleDraw", true);
+
+        if (!playing_movie)
+            ConsoleDrawer();
+    }
+
+    {
+        EDGE_ZoneNamedN(ZoneHudOverlays, "HudOverlays", true);
+        if (!need_wipe && epi::StringCompare(video_overlay.s_, "None") != 0)
+        {
+            ImageData   *ov_data = available_overlays[video_overlay.s_].first;
+            unsigned int tex_id  = available_overlays[video_overlay.s_].second;
+            if (ov_data && tex_id)
+                HUDRawFromTexID(0, 0, current_screen_width, current_screen_height, tex_id, kOpacityComplex, 0, 0,
+                                (float)current_screen_width / ov_data->width_,
+                                (float)current_screen_height / ov_data->height_, HUDGetAlpha());
+        }
     }
 
     if (gamma_correction.f_ < 0)
@@ -740,8 +776,8 @@ void EdgeDisplay(void)
 
         StartUnitBatch(false);
 
-        RendererVertex *glvert = BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0,
-                                                 kBlendingNegativeGamma);
+        RendererVertex *glvert = BeginRenderUnit(6, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0,
+                                                 0, kBlendingNegativeGamma);
 
         float x1 = 0;
         float x2 = current_screen_width;
@@ -749,16 +785,20 @@ void EdgeDisplay(void)
         float y1 = current_screen_height;
         float y2 = 0;
 
+        RendererVertex *v0 = glvert;
         glvert->rgba       = unit_col;
         glvert++->position = {{x1, y1, 0}};
         glvert->rgba       = unit_col;
         glvert++->position = {{x2, y1, 0}};
+        RendererVertex *v2 = glvert;
         glvert->rgba       = unit_col;
         glvert++->position = {{x2, y2, 0}};
+        *glvert++          = *v0;
+        *glvert++          = *v2;
         glvert->rgba       = unit_col;
         glvert->position   = {{x1, y2, 0}};
 
-        EndRenderUnit(4);
+        EndRenderUnit(6);
 
         FinishUnitBatch();
     }
@@ -770,8 +810,8 @@ void EdgeDisplay(void)
 
         StartUnitBatch(false);
 
-        RendererVertex *glvert = BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0,
-                                                 kBlendingPositiveGamma);
+        RendererVertex *glvert = BeginRenderUnit(6, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0,
+                                                 0, kBlendingPositiveGamma);
 
         float x1 = 0;
         float x2 = current_screen_width;
@@ -779,16 +819,20 @@ void EdgeDisplay(void)
         float y1 = current_screen_height;
         float y2 = 0;
 
+        RendererVertex *v0 = glvert;
         glvert->rgba       = unit_col;
         glvert++->position = {{x1, y1, 0}};
         glvert->rgba       = unit_col;
         glvert++->position = {{x2, y1, 0}};
+        RendererVertex *v2 = glvert;
         glvert->rgba       = unit_col;
         glvert++->position = {{x2, y2, 0}};
+        *glvert++          = *v0;
+        *glvert++          = *v2;
         glvert->rgba       = unit_col;
         glvert->position   = {{x1, y2, 0}};
 
-        EndRenderUnit(4);
+        EndRenderUnit(6);
 
         FinishUnitBatch();
     }
@@ -2194,7 +2238,6 @@ static void EdgeStartup(void)
     ConsoleStart();
     CreateQuitScreen();
     SpecialWadVerify();
-    BuildXGLNodes();
     ShowNotice();
 
     InitializeSaveSystem();
@@ -2393,6 +2436,8 @@ void EdgeIdle(void)
 //
 void EdgeTicker(void)
 {
+    EDGE_ZoneScoped;
+
     DoBigGameStuff();
 
     // Update display, next frame, with current state.

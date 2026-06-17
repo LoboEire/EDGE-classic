@@ -169,7 +169,7 @@ void RendererColourmapEffect(Player *player)
             RGBAColor unit_col = kRGBAWhite;
 
             RendererVertex *glvert =
-                BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingInvert);
+                BeginRenderUnit(6, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingInvert);
 
             x1 = view_window_x;
             x2 = view_window_x + view_window_width;
@@ -177,16 +177,20 @@ void RendererColourmapEffect(Player *player)
             y1 = view_window_y + view_window_height;
             y2 = view_window_y;
 
+            RendererVertex *v0 = glvert;
             glvert->rgba       = unit_col;
             glvert++->position = {{x1, y1, 0}};
             glvert->rgba       = unit_col;
             glvert++->position = {{x2, y1, 0}};
+            RendererVertex *v2 = glvert;
             glvert->rgba       = unit_col;
             glvert++->position = {{x2, y2, 0}};
+            *glvert++          = *v0;
+            *glvert++          = *v2;
             glvert->rgba       = unit_col;
             glvert->position   = {{x1, y2, 0}};
 
-            EndRenderUnit(4);
+            EndRenderUnit(6);
 
             FinishUnitBatch();
         }
@@ -266,18 +270,22 @@ void RendererPaletteEffect(Player *player)
         StartUnitBatch(false);
 
         RendererVertex *glvert =
-            BeginRenderUnit(GL_QUADS, 4, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingAlpha);
+            BeginRenderUnit(6, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0, kBlendingAlpha);
 
+        RendererVertex *v0 = glvert;
         glvert->rgba       = unit_col;
         glvert++->position = {{0, (float)current_screen_height, 0}};
         glvert->rgba       = unit_col;
         glvert++->position = {{(float)current_screen_width, (float)current_screen_height, 0}};
+        RendererVertex *v2 = glvert;
         glvert->rgba       = unit_col;
         glvert++->position = {{(float)current_screen_width, 0, 0}};
+        *glvert++          = *v0;
+        *glvert++          = *v2;
         glvert->rgba       = unit_col;
         glvert->position   = {{0, 0, 0}};
 
-        EndRenderUnit(4);
+        EndRenderUnit(6);
 
         FinishUnitBatch();
     }

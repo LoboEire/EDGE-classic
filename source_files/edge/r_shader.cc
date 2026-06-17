@@ -22,6 +22,7 @@
 
 #include "ddf_main.h"
 #include "epi.h"
+#include "epi_simd.h"
 #include "epi_str_hash.h"
 #include "i_defs_gl.h"
 #include "im_data.h"
@@ -80,6 +81,25 @@ class LightImage
         }
 
         curve_[kLightImageCurveSize - 1] = kRGBABlack;
+    }
+
+    inline float CurveIntensity(float d)
+    {
+        float pos = d * (float)(kLightImageCurveSize - 1);
+
+        if (pos >= (float)(kLightImageCurveSize - 1))
+            return 0.0f;
+
+        if (pos <= 0.0f)
+            return 1.0f;
+
+        int p1      = (int)pos;
+        float frac  = pos - (float)p1;
+
+        float v1 = epi::GetRGBARed(curve_[p1])     * (1.0f / 255.0f);
+        float v2 = epi::GetRGBARed(curve_[p1 + 1]) * (1.0f / 255.0f);
+
+        return v1 + frac * (v2 - v1);
     }
 
     RGBAColor CurvePoint(float d, RGBAColor tint)
@@ -165,9 +185,16 @@ class dynlight_shader_c : public AbstractShader
     LightImage *lim;
 
     float radius;
+    bool  normal_is_horiz_;
+    float norm_nx_;
+    float norm_ny_;
+    float norm_nz_;
+    float r_xy_scale_;
 
   public:
-    dynlight_shader_c(MapObject *object, float r) : mo(object), radius(r)
+    dynlight_shader_c(MapObject *object, float r)
+        : mo(object), radius(r), normal_is_horiz_(false), norm_nx_(0.0f), norm_ny_(0.0f), norm_nz_(1.0f),
+          r_xy_scale_(1.0f)
     {
         // Note: this is shared, we must not delete it
         lim = GetLightImage(mo->info_);
@@ -178,7 +205,28 @@ class dynlight_shader_c : public AbstractShader
     }
 
   private:
-    inline float TexCoord(HMM_Vec2 *texc, float r, const HMM_Vec3 *lit_pos, const HMM_Vec3 *normal)
+    inline void PrepareNormal(const HMM_Vec3 *normal)
+    {
+        float nx = normal->X;
+        float ny = normal->Y;
+        float nz = normal->Z;
+
+        if (fabs(nz) > 50 * (fabs(nx) + fabs(ny)))
+        {
+            normal_is_horiz_ = true;
+        }
+        else
+        {
+            normal_is_horiz_  = false;
+            float n_len_inv   = epi::RsqrtF32(nx * nx + ny * ny + nz * nz);
+            norm_nx_          = nx * n_len_inv;
+            norm_ny_          = ny * n_len_inv;
+            norm_nz_          = nz * n_len_inv;
+            r_xy_scale_       = epi::RsqrtF32(1.0f - norm_nz_ * norm_nz_);
+        }
+    }
+
+    inline float TexCoord(HMM_Vec2 *texc, float r, const HMM_Vec3 *lit_pos)
     {
         float mx = mo->x;
         float my = mo->y;
@@ -191,13 +239,8 @@ class dynlight_shader_c : public AbstractShader
         float dy = lit_pos->Y - my;
         float dz = lit_pos->Z - mz;
 
-        float nx = normal->X;
-        float ny = normal->Y;
-        float nz = normal->Z;
-
-        if (fabs(nz) > 50 * (fabs(nx) + fabs(ny)))
+        if (normal_is_horiz_)
         {
-            /* horizontal plane */
             texc->X = (1 + dx / r) / 2.0;
             texc->Y = (1 + dy / r) / 2.0;
 
@@ -205,20 +248,13 @@ class dynlight_shader_c : public AbstractShader
         }
         else
         {
-            float n_len = sqrt(nx * nx + ny * ny + nz * nz);
+            float dxy   = norm_nx_ * dy - norm_ny_ * dx;
+            float adj_r = r * r_xy_scale_;
 
-            nx /= n_len;
-            ny /= n_len;
-            nz /= n_len;
+            texc->Y = (1 + dz / adj_r) / 2.0;
+            texc->X = (1 + dxy / adj_r) / 2.0;
 
-            float dxy = nx * dy - ny * dx;
-
-            r /= sqrt(nx * nx + ny * ny); // correct ??
-
-            texc->Y = (1 + dz / r) / 2.0;
-            texc->X = (1 + dxy / r) / 2.0;
-
-            return fabs(nx * dx + ny * dy + nz * dz) / r;
+            return fabs(norm_nx_ * dx + norm_ny_ * dy + norm_nz_ * dz) / adj_r;
         }
     }
 
@@ -251,7 +287,7 @@ class dynlight_shader_c : public AbstractShader
         float dy = y - my;
         float dz = z - mz;
 
-        float dist = sqrt(dx * dx + dy * dy + dz * dz);
+        float dist = sqrtf(dx * dx + dy * dy + dz * dz);
 
         if (WhatType() == kDynamicLightTypeNone)
             return;
@@ -295,13 +331,15 @@ class dynlight_shader_c : public AbstractShader
         dy -= my;
         dz -= mz;
 
-        float dist = sqrt(dx * dx + dy * dy + dz * dz);
+        float dist_sq  = dx * dx + dy * dy + dz * dz;
+        float dist_inv = epi::RsqrtF32(dist_sq);
+        float dist     = dist_sq * dist_inv;
 
-        dx /= dist;
-        dy /= dist;
-        dz /= dist;
+        dx *= dist_inv;
+        dy *= dist_inv;
+        dz *= dist_inv;
 
-        dist = HMM_MAX(1.0, dist - mod_pos->radius_ * render_mirror_set.XYScale());
+        dist = HMM_MAX(1.0f, dist - mod_pos->radius_ * render_mirror_set.XYScale());
 
         float L = 0.6 - 0.7 * (dx * nx + dy * ny + dz * nz);
 
@@ -322,7 +360,8 @@ class dynlight_shader_c : public AbstractShader
     }
 
     void WorldMix(GLuint shape, int num_vert, GLuint tex, float alpha, int *pass_var, BlendingMode blending,
-                  bool masked, void *data, ShaderCoordinateFunction func)
+                  bool masked, void *data, ShaderCoordinateFunction func,
+                  ShaderCoordinateBatchFunction batch_func = nullptr)
     {
         if (WhatType() == kDynamicLightTypeNone)
             return;
@@ -337,8 +376,123 @@ class dynlight_shader_c : public AbstractShader
         float G = L * epi::GetRGBAGreen(col);
         float B = L * epi::GetRGBABlue(col);
 
+        int out_vert;
+        if (shape == GL_POLYGON)
+            out_vert = (num_vert - 2) * 3;
+        else if (shape == GL_QUAD_STRIP)
+            out_vert = (num_vert / 2 - 1) * 6;
+        else
+            out_vert = num_vert;
+
+        RendererVertex temp[kMaximumPolygonVertices];
+
+        uint8_t alpha_byte = (uint8_t)(alpha * 255.0f);
+
+        int v_idx = 0;
+
+        epi::SimdF32x4 r_base = epi::SplatF32x4(R);
+        epi::SimdF32x4 g_base = epi::SplatF32x4(G);
+        epi::SimdF32x4 b_base = epi::SplatF32x4(B);
+        epi::SimdI32x4 a_v    = epi::SplatI32x4((int32_t)alpha_byte);
+
+        if (num_vert > 0)
+        {
+            HMM_Vec3  peek_normal, peek_lit_pos, peek_pos;
+            HMM_Vec2  peek_texc;
+            RGBAColor peek_rgba;
+            (*func)(data, 0, &peek_pos, &peek_rgba, &peek_texc, &peek_normal, &peek_lit_pos);
+            PrepareNormal(&peek_normal);
+        }
+
+        if (batch_func)
+        {
+            HMM_Vec3  batch_pos[4];
+            RGBAColor batch_rgb[4];
+            HMM_Vec2  batch_texc[4];
+            HMM_Vec3  batch_normal[4];
+            HMM_Vec3  batch_lit_pos[4];
+
+            for (; v_idx + 3 < num_vert; v_idx += 4)
+            {
+                (*batch_func)(data, v_idx, batch_pos, batch_rgb, batch_texc, batch_normal, batch_lit_pos);
+
+                float ity_arr[4];
+                for (int k = 0; k < 4; k++)
+                {
+                    RendererVertex *dest         = temp + v_idx + k;
+                    dest->position               = batch_pos[k];
+                    dest->texture_coordinates[0] = batch_texc[k];
+                    float dist                   = TexCoord(&dest->texture_coordinates[1], WhatRadius(), &batch_lit_pos[k]);
+                    ity_arr[k]                   = lim->CurveIntensity(dist);
+                }
+
+                epi::SimdF32x4 ity_v = epi::SetF32x4(ity_arr[0], ity_arr[1], ity_arr[2], ity_arr[3]);
+
+                epi::SimdI32x4 r_i = epi::CvtF32x4ToI32x4(epi::MulF32x4(r_base, ity_v));
+                epi::SimdI32x4 g_i = epi::CvtF32x4ToI32x4(epi::MulF32x4(g_base, ity_v));
+                epi::SimdI32x4 b_i = epi::CvtF32x4ToI32x4(epi::MulF32x4(b_base, ity_v));
+
+                epi::SimdI32x4 rgba_v =
+                    epi::OrI32x4(epi::OrI32x4(epi::ShiftLeftI32x4<24>(r_i), epi::ShiftLeftI32x4<16>(g_i)),
+                                 epi::OrI32x4(epi::ShiftLeftI32x4<8>(b_i), a_v));
+
+                int32_t simd_tmp[4];
+                epi::StoreI32x4(simd_tmp, rgba_v);
+                (temp + v_idx + 0)->rgba = (RGBAColor)simd_tmp[0];
+                (temp + v_idx + 1)->rgba = (RGBAColor)simd_tmp[1];
+                (temp + v_idx + 2)->rgba = (RGBAColor)simd_tmp[2];
+                (temp + v_idx + 3)->rgba = (RGBAColor)simd_tmp[3];
+            }
+        }
+        else
+        {
+            for (; v_idx + 3 < num_vert; v_idx += 4)
+            {
+                float ity_arr[4];
+
+                for (int k = 0; k < 4; k++)
+                {
+                    RendererVertex *dest = temp + v_idx + k;
+                    HMM_Vec3        lit_pos, normal;
+                    (*func)(data, v_idx + k, &dest->position, &dest->rgba, &dest->texture_coordinates[0], &normal,
+                            &lit_pos);
+                    EPI_UNUSED(normal);
+                    float dist = TexCoord(&dest->texture_coordinates[1], WhatRadius(), &lit_pos);
+                    ity_arr[k] = lim->CurveIntensity(dist);
+                }
+
+                epi::SimdF32x4 ity_v = epi::SetF32x4(ity_arr[0], ity_arr[1], ity_arr[2], ity_arr[3]);
+
+                epi::SimdI32x4 r_i = epi::CvtF32x4ToI32x4(epi::MulF32x4(r_base, ity_v));
+                epi::SimdI32x4 g_i = epi::CvtF32x4ToI32x4(epi::MulF32x4(g_base, ity_v));
+                epi::SimdI32x4 b_i = epi::CvtF32x4ToI32x4(epi::MulF32x4(b_base, ity_v));
+
+                epi::SimdI32x4 rgba_v =
+                    epi::OrI32x4(epi::OrI32x4(epi::ShiftLeftI32x4<24>(r_i), epi::ShiftLeftI32x4<16>(g_i)),
+                                 epi::OrI32x4(epi::ShiftLeftI32x4<8>(b_i), a_v));
+
+                int32_t simd_tmp[4];
+                epi::StoreI32x4(simd_tmp, rgba_v);
+                (temp + v_idx + 0)->rgba = (RGBAColor)simd_tmp[0];
+                (temp + v_idx + 1)->rgba = (RGBAColor)simd_tmp[1];
+                (temp + v_idx + 2)->rgba = (RGBAColor)simd_tmp[2];
+                (temp + v_idx + 3)->rgba = (RGBAColor)simd_tmp[3];
+            }
+        }
+
+        for (; v_idx < num_vert; v_idx++)
+        {
+            RendererVertex *dest = temp + v_idx;
+            HMM_Vec3        lit_pos, normal;
+            (*func)(data, v_idx, &dest->position, &dest->rgba, &dest->texture_coordinates[0], &normal, &lit_pos);
+            EPI_UNUSED(normal);
+            float dist = TexCoord(&dest->texture_coordinates[1], WhatRadius(), &lit_pos);
+            float ity  = lim->CurveIntensity(dist);
+            dest->rgba = epi::MakeRGBA((uint8_t)(R * ity), (uint8_t)(G * ity), (uint8_t)(B * ity), alpha_byte);
+        }
+
         RendererVertex *glvert =
-            BeginRenderUnit(shape, num_vert,
+            BeginRenderUnit(out_vert,
                             (is_additive && masked) ? (GLuint)kTextureEnvironmentSkipRGB
                             : is_additive           ? (GLuint)kTextureEnvironmentDisable
                                                     : GL_MODULATE,
@@ -346,23 +500,34 @@ class dynlight_shader_c : public AbstractShader
                             *pass_var > 0 ? kRGBANoValue : mo->subsector_->sector->properties.fog_color,
                             mo->subsector_->sector->properties.fog_density);
 
-        for (int v_idx = 0; v_idx < num_vert; v_idx++)
+        if (shape == GL_POLYGON)
         {
-            RendererVertex *dest = glvert + v_idx;
-
-            HMM_Vec3 lit_pos;
-
-            (*func)(data, v_idx, &dest->position, &dest->rgba, &dest->texture_coordinates[0], &dest->normal, &lit_pos);
-
-            float dist = TexCoord(&dest->texture_coordinates[1], WhatRadius(), &lit_pos, &dest->normal);
-
-            float ity = exp(-5.44 * dist * dist);
-
-            dest->rgba =
-                epi::MakeRGBA((uint8_t)(R * ity), (uint8_t)(G * ity), (uint8_t)(B * ity), (uint8_t)(alpha * 255.0f));
+            for (int i = 1; i < num_vert - 1; i++)
+            {
+                *glvert++ = temp[0];
+                *glvert++ = temp[i];
+                *glvert++ = temp[i + 1];
+            }
+        }
+        else if (shape == GL_QUAD_STRIP)
+        {
+            for (int i = 0; i < num_vert - 2; i += 2)
+            {
+                *glvert++ = temp[i];
+                *glvert++ = temp[i + 1];
+                *glvert++ = temp[i + 3];
+                *glvert++ = temp[i];
+                *glvert++ = temp[i + 3];
+                *glvert++ = temp[i + 2];
+            }
+        }
+        else
+        {
+            for (int i = 0; i < num_vert; i++)
+                *glvert++ = temp[i];
         }
 
-        EndRenderUnit(num_vert);
+        EndRenderUnit(out_vert);
 
         (*pass_var) += 1;
     }
@@ -501,8 +666,10 @@ class plane_glow_c : public AbstractShader
     }
 
     void WorldMix(GLuint shape, int num_vert, GLuint tex, float alpha, int *pass_var, BlendingMode blending,
-                  bool masked, void *data, ShaderCoordinateFunction func)
+                  bool masked, void *data, ShaderCoordinateFunction func,
+                  ShaderCoordinateBatchFunction batch_func = nullptr)
     {
+        EPI_UNUSED(batch_func);
         const Sector *sec = mo->subsector_->sector;
 
         if (WhatType() == kDynamicLightTypeNone)
@@ -518,8 +685,31 @@ class plane_glow_c : public AbstractShader
         float G = L * epi::GetRGBAGreen(col);
         float B = L * epi::GetRGBABlue(col);
 
+        int out_vert;
+        if (shape == GL_POLYGON)
+            out_vert = (num_vert - 2) * 3;
+        else if (shape == GL_QUAD_STRIP)
+            out_vert = (num_vert / 2 - 1) * 6;
+        else
+            out_vert = num_vert;
+
+        RendererVertex temp[kMaximumPolygonVertices];
+        for (int v_idx = 0; v_idx < num_vert; v_idx++)
+        {
+            RendererVertex *dest = temp + v_idx;
+
+            HMM_Vec3 lit_pos;
+            HMM_Vec3 normal;
+
+            (*func)(data, v_idx, &dest->position, &dest->rgba, &dest->texture_coordinates[0], &normal, &lit_pos);
+
+            TexCoord(&dest->texture_coordinates[1], WhatRadius(), sec, &lit_pos, &normal);
+
+            dest->rgba = epi::MakeRGBA((uint8_t)R, (uint8_t)G, (uint8_t)B, (uint8_t)(alpha * 255.0f));
+        }
+
         RendererVertex *glvert =
-            BeginRenderUnit(shape, num_vert,
+            BeginRenderUnit(out_vert,
                             (is_additive && masked) ? (GLuint)kTextureEnvironmentSkipRGB
                             : is_additive           ? (GLuint)kTextureEnvironmentDisable
                                                     : GL_MODULATE,
@@ -527,20 +717,34 @@ class plane_glow_c : public AbstractShader
                             *pass_var > 0 ? kRGBANoValue : mo->subsector_->sector->properties.fog_color,
                             mo->subsector_->sector->properties.fog_density);
 
-        for (int v_idx = 0; v_idx < num_vert; v_idx++)
+        if (shape == GL_POLYGON)
         {
-            RendererVertex *dest = glvert + v_idx;
-
-            HMM_Vec3 lit_pos;
-
-            (*func)(data, v_idx, &dest->position, &dest->rgba, &dest->texture_coordinates[0], &dest->normal, &lit_pos);
-
-            TexCoord(&dest->texture_coordinates[1], WhatRadius(), sec, &lit_pos, &dest->normal);
-
-            dest->rgba = epi::MakeRGBA((uint8_t)R, (uint8_t)G, (uint8_t)B, (uint8_t)(alpha * 255.0f));
+            for (int i = 1; i < num_vert - 1; i++)
+            {
+                *glvert++ = temp[0];
+                *glvert++ = temp[i];
+                *glvert++ = temp[i + 1];
+            }
+        }
+        else if (shape == GL_QUAD_STRIP)
+        {
+            for (int i = 0; i < num_vert - 2; i += 2)
+            {
+                *glvert++ = temp[i];
+                *glvert++ = temp[i + 1];
+                *glvert++ = temp[i + 3];
+                *glvert++ = temp[i];
+                *glvert++ = temp[i + 3];
+                *glvert++ = temp[i + 2];
+            }
+        }
+        else
+        {
+            for (int v_idx = 0; v_idx < num_vert; v_idx++)
+                *glvert++ = temp[v_idx];
         }
 
-        EndRenderUnit(num_vert);
+        EndRenderUnit(out_vert);
 
         (*pass_var) += 1;
     }
@@ -665,8 +869,10 @@ class wall_glow_c : public AbstractShader
     }
 
     void WorldMix(GLuint shape, int num_vert, GLuint tex, float alpha, int *pass_var, BlendingMode blending,
-                  bool masked, void *data, ShaderCoordinateFunction func)
+                  bool masked, void *data, ShaderCoordinateFunction func,
+                  ShaderCoordinateBatchFunction batch_func = nullptr)
     {
+        EPI_UNUSED(batch_func);
         const Sector *sec = mo->subsector_->sector;
 
         if (WhatType() == kDynamicLightTypeNone)
@@ -682,8 +888,33 @@ class wall_glow_c : public AbstractShader
         float G = L * epi::GetRGBAGreen(col);
         float B = L * epi::GetRGBABlue(col);
 
+        int out_vert;
+        if (shape == GL_POLYGON)
+            out_vert = (num_vert - 2) * 3;
+        else if (shape == GL_QUAD_STRIP)
+            out_vert = (num_vert / 2 - 1) * 6;
+        else
+            out_vert = num_vert;
+
+        RendererVertex temp[kMaximumPolygonVertices];
+        for (int v_idx = 0; v_idx < num_vert; v_idx++)
+        {
+            RendererVertex *dest = temp + v_idx;
+
+            HMM_Vec3 lit_pos;
+            HMM_Vec3 normal;
+
+            (*func)(data, v_idx, &dest->position, &dest->rgba, &dest->texture_coordinates[0], &normal, &lit_pos);
+
+            TexCoord(&dest->texture_coordinates[1], WhatRadius(), sec, &lit_pos, &normal);
+
+            dest->rgba =
+                epi::MakeRGBA((uint8_t)(R * render_view_red_multiplier), (uint8_t)(G * render_view_green_multiplier),
+                              (uint8_t)(B * render_view_blue_multiplier), (uint8_t)(alpha * 255.0f));
+        }
+
         RendererVertex *glvert =
-            BeginRenderUnit(shape, num_vert,
+            BeginRenderUnit(out_vert,
                             (is_additive && masked) ? (GLuint)kTextureEnvironmentSkipRGB
                             : is_additive           ? (GLuint)kTextureEnvironmentDisable
                                                     : GL_MODULATE,
@@ -691,22 +922,34 @@ class wall_glow_c : public AbstractShader
                             *pass_var > 0 ? kRGBANoValue : mo->subsector_->sector->properties.fog_color,
                             mo->subsector_->sector->properties.fog_density);
 
-        for (int v_idx = 0; v_idx < num_vert; v_idx++)
+        if (shape == GL_POLYGON)
         {
-            RendererVertex *dest = glvert + v_idx;
-
-            HMM_Vec3 lit_pos;
-
-            (*func)(data, v_idx, &dest->position, &dest->rgba, &dest->texture_coordinates[0], &dest->normal, &lit_pos);
-
-            TexCoord(&dest->texture_coordinates[1], WhatRadius(), sec, &lit_pos, &dest->normal);
-
-            dest->rgba =
-                epi::MakeRGBA((uint8_t)(R * render_view_red_multiplier), (uint8_t)(G * render_view_green_multiplier),
-                              (uint8_t)(B * render_view_blue_multiplier), (uint8_t)(alpha * 255.0f));
+            for (int i = 1; i < num_vert - 1; i++)
+            {
+                *glvert++ = temp[0];
+                *glvert++ = temp[i];
+                *glvert++ = temp[i + 1];
+            }
+        }
+        else if (shape == GL_QUAD_STRIP)
+        {
+            for (int i = 0; i < num_vert - 2; i += 2)
+            {
+                *glvert++ = temp[i];
+                *glvert++ = temp[i + 1];
+                *glvert++ = temp[i + 3];
+                *glvert++ = temp[i];
+                *glvert++ = temp[i + 3];
+                *glvert++ = temp[i + 2];
+            }
+        }
+        else
+        {
+            for (int v_idx = 0; v_idx < num_vert; v_idx++)
+                *glvert++ = temp[v_idx];
         }
 
-        EndRenderUnit(num_vert);
+        EndRenderUnit(out_vert);
 
         (*pass_var) += 1;
     }

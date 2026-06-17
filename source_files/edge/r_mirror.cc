@@ -1,7 +1,7 @@
 
 #include "r_mirror.h"
 
-#include "epi_doomdefs.h"
+#include "dm_defs.h"
 #include "r_image.h"
 #include "r_render.h"
 #include "r_units.h"
@@ -43,19 +43,23 @@ static void DrawMirrorPolygon(DrawMirror *mir)
     render_mirror_set.Coordinate(x1, y1);
     render_mirror_set.Coordinate(x2, y2);
 
-    RendererVertex *glvert = BeginRenderUnit(GL_POLYGON, 4, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0,
+    RendererVertex *glvert = BeginRenderUnit(6, GL_MODULATE, 0, (GLuint)kTextureEnvironmentDisable, 0, 0,
                                              alpha < 0.99f ? kBlendingAlpha : kBlendingNone);
 
+    RendererVertex *v0 = glvert;
     glvert->rgba       = unit_col;
     glvert++->position = {{x1, y1, z1}};
     glvert->rgba       = unit_col;
     glvert++->position = {{x1, y1, z2}};
+    RendererVertex *v2 = glvert;
     glvert->rgba       = unit_col;
     glvert++->position = {{x2, y2, z2}};
+    *glvert++          = *v0;
+    *glvert++          = *v2;
     glvert->rgba       = unit_col;
     glvert->position   = {{x2, y2, z1}};
 
-    EndRenderUnit(4);
+    EndRenderUnit(6);
 }
 
 static void DrawPortalPolygon(DrawMirror *mir)
@@ -108,23 +112,27 @@ static void DrawPortalPolygon(DrawMirror *mir)
     ty1 = ty1 * surf->y_matrix.Y / total_h;
     ty2 = ty2 * surf->y_matrix.Y / total_h;
 
-    RendererVertex *glvert = BeginRenderUnit(GL_POLYGON, 4, GL_MODULATE, tex_id, (GLuint)kTextureEnvironmentDisable, 0,
+    RendererVertex *glvert = BeginRenderUnit(6, GL_MODULATE, tex_id, (GLuint)kTextureEnvironmentDisable, 0,
                                              0, alpha < 0.99f ? kBlendingAlpha : kBlendingNone);
 
+    RendererVertex *v0               = glvert;
     glvert->rgba                     = unit_col;
     glvert->position                 = {{x1, y1, z1}};
     glvert++->texture_coordinates[0] = {{tx1, ty1}};
     glvert->rgba                     = unit_col;
     glvert->position                 = {{x1, y1, z2}};
     glvert++->texture_coordinates[0] = {{tx1, ty2}};
+    RendererVertex *v2               = glvert;
     glvert->rgba                     = unit_col;
     glvert->position                 = {{x2, y2, z2}};
     glvert++->texture_coordinates[0] = {{tx2, ty2}};
+    *glvert++                        = *v0;
+    *glvert++                        = *v2;
     glvert->rgba                     = unit_col;
     glvert->position                 = {{x2, y2, z1}};
     glvert->texture_coordinates[0]   = {{tx2, ty1}};
 
-    EndRenderUnit(4);
+    EndRenderUnit(6);
 }
 
 void RenderMirror(DrawMirror *mir)

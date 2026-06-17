@@ -246,11 +246,7 @@ static inline bool IsDirectorySeparator(const char c)
 bool IsPathAbsolute(std::string_view path)
 {
     EPI_ASSERT(!path.empty());
-
-    if (IsDirectorySeparator(path[0]))
-        return true;
-    else
-        return false;
+    return IsDirectorySeparator(path[0]);
 }
 static const char *FlagsToANSIMode(int flags)
 {
@@ -283,10 +279,10 @@ static const char *FlagsToANSIMode(int flags)
 }
 FILE *FileOpenRaw(std::string_view name, unsigned int flags)
 {
+    EPI_ASSERT(!name.empty());
     const char *mode = FlagsToANSIMode(flags);
     if (!mode)
         return nullptr;
-    EPI_ASSERT(!name.empty());
     return fopen(std::string(name).c_str(), mode);
 }
 bool FileDelete(std::string_view name)
@@ -420,7 +416,7 @@ std::string GetStem(std::string_view path)
 {
     EPI_ASSERT(!path.empty());
     // back up until a slash or the start
-    for (int p = path.size() - 1; p > 1; p--)
+    for (int p = path.size() - 1; p > 0; p--)
     {
         if (IsDirectorySeparator(path[p - 1]))
         {
@@ -472,7 +468,7 @@ std::string MakePathRelative(std::string_view parent, std::string_view child)
 {
     EPI_ASSERT(!parent.empty() && !child.empty() && child.size() > parent.size());
     size_t parent_check = child.find(parent);
-    if (parent_check != std::string_view::npos)
+    if (parent_check == 0)
     {
         child.remove_prefix(parent.size());
         if (IsDirectorySeparator(child[0]))
@@ -485,6 +481,7 @@ std::string MakePathRelative(std::string_view parent, std::string_view child)
 std::string SanitizePath(std::string_view path)
 {
     std::string sani_path;
+    sani_path.reserve(path.size());
     for (const char ch : path)
     {
         if (ch == '\\')
@@ -502,13 +499,13 @@ std::string PathAppend(std::string_view parent, std::string_view child)
     if (IsDirectorySeparator(parent.back()))
         parent.remove_suffix(1);
 
-    std::string new_path(parent);
-
-    new_path.push_back('/');
-
     if (IsDirectorySeparator(child[0]))
         child.remove_prefix(1);
 
+    std::string new_path;
+    new_path.reserve(parent.size() + 1 + child.size());
+    new_path.append(parent);
+    new_path.push_back('/');
     new_path.append(child);
 
     return new_path;
@@ -518,20 +515,20 @@ std::string PathAppendIfNotAbsolute(std::string_view parent, std::string_view ch
 {
     EPI_ASSERT(!parent.empty() && !child.empty());
 
-    std::string new_path;
-
     if (IsPathAbsolute(child))
-        new_path = child;
-    else
-    {
-        if (IsDirectorySeparator(parent.back()))
-            parent.remove_suffix(1);
-        new_path = parent;
-        new_path.push_back('/');
-        if (IsDirectorySeparator(child[0]))
-            child.remove_prefix(1);
-        new_path.append(child);
-    }
+        return std::string(child);
+
+    if (IsDirectorySeparator(parent.back()))
+        parent.remove_suffix(1);
+
+    if (IsDirectorySeparator(child[0]))
+        child.remove_prefix(1);
+
+    std::string new_path;
+    new_path.reserve(parent.size() + 1 + child.size());
+    new_path.append(parent);
+    new_path.push_back('/');
+    new_path.append(child);
 
     return new_path;
 }
@@ -539,25 +536,17 @@ std::string PathAppendIfNotAbsolute(std::string_view parent, std::string_view ch
 std::string GetDirectory(std::string_view path)
 {
     EPI_ASSERT(!path.empty());
-    std::string directory;
-    // back up until a slash or the start
     for (int p = path.size() - 1; p >= 0; p--)
     {
         if (IsDirectorySeparator(path[p]))
-        {
-            directory = path.substr(0, p + 1);
-            break;
-        }
+            return std::string(path.substr(0, p + 1));
     }
-
-    return directory; // nothing
+    return std::string();
 }
 
 std::string GetExtension(std::string_view path)
 {
     EPI_ASSERT(!path.empty());
-    std::string extension;
-    // back up until a dot
     for (int p = path.size() - 1; p >= 0; p--)
     {
         const char ch = path[p];
@@ -566,16 +555,15 @@ std::string GetExtension(std::string_view path)
 
         if (ch == '.')
         {
-            // handle filenames that being with a dot
+            // handle filenames that begin with a dot
             // (un*x style hidden files)
             if (p == 0 || IsDirectorySeparator(path[p - 1]))
                 break;
 
-            extension = path.substr(p);
-            break;
+            return std::string(path.substr(p));
         }
     }
-    return extension; // can be empty
+    return std::string();
 }
 
 void ReplaceExtension(std::string &path, std::string_view ext)
@@ -603,10 +591,7 @@ void ReplaceExtension(std::string &path, std::string_view ext)
     if (extpos == -1) // No extension found, add it
         path.append(ext);
     else
-    {
-        path.erase(extpos);
-        path.append(ext);
-    }
+        path.replace(extpos, std::string::npos, ext);
 }
 
 File *FileOpen(std::string_view name, unsigned int flags)

@@ -40,7 +40,6 @@ struct RendererVertex
     RGBAColor rgba;
     HMM_Vec3  position;
     HMM_Vec2  texture_coordinates[2];
-    HMM_Vec3  normal;
 };
 
 extern RGBAColor culling_fog_color;
@@ -89,9 +88,8 @@ enum CustomTextureEnvironment
     // normally, i.e. passed on to next texture unit.
 };
 
-RendererVertex *BeginRenderUnit(GLuint shape, int max_vert, GLuint env1, GLuint tex1, GLuint env2, GLuint tex2,
-                                int pass, BlendingMode blending, RGBAColor fog_color = kRGBANoValue,
-                                float fog_density = 0);
+RendererVertex *BeginRenderUnit(int max_vert, GLuint env1, GLuint tex1, GLuint env2, GLuint tex2, int pass,
+                                BlendingMode blending, RGBAColor fog_color = kRGBANoValue, float fog_density = 0);
 void            EndRenderUnit(int actual_vert);
 
 //--- editor settings ---

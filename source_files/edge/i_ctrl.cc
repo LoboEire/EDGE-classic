@@ -21,6 +21,7 @@
 #include "e_event.h"
 #include "e_input.h"
 #include "e_main.h"
+#include "edge_profiling.h"
 #include "epi.h"
 #include "epi_str_util.h"
 #include "i_system.h"
@@ -760,6 +761,8 @@ void StartupControl(void)
 
 void ControlGetEvents(void)
 {
+    EDGE_ZoneScoped;
+
     SDL_Event sdl_ev;
 
     while (SDL_PollEvent(&sdl_ev))

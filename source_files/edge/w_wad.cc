@@ -41,7 +41,6 @@
 #include <list>
 #include <vector>
 
-#include "bsp.h"
 #include "ddf_anim.h"
 #include "ddf_colormap.h"
 #include "ddf_main.h"
@@ -52,7 +51,6 @@
 #include "dstrings.h"
 #include "e_main.h"
 #include "e_search.h"
-#include "epi_doomdefs.h"
 #include "epi_endian.h"
 #include "epi_file.h"
 #include "epi_filesystem.h"
@@ -1208,56 +1206,6 @@ void ProcessWad(DataFile *df, size_t file_index)
     ProcessLuaInWad(df);
 }
 
-std::string BuildXGLNodesForWAD(DataFile *df)
-{
-    if (df->wad_->level_markers_.empty())
-        return "";
-
-    // determine XWA filename in the cache
-    std::string cache_name = epi::GetStem(df->name_);
-    cache_name += "-";
-    cache_name += df->wad_->md5_string_;
-    cache_name += ".xwa";
-
-    std::string xwa_filename = epi::PathAppend(cache_directory, cache_name);
-
-    LogDebug("XWA filename: %s\n", xwa_filename.c_str());
-
-    // check whether an XWA file for this map exists in the cache
-    bool exists = epi::TestFileAccess(xwa_filename);
-
-    if (!exists)
-    {
-        LogPrint("Building XGL nodes for: %s\n", df->name_.c_str());
-
-        LogDebug("# source: '%s'\n", df->name_.c_str());
-        LogDebug("#   dest: '%s'\n", xwa_filename.c_str());
-
-        ajbsp::ResetInfo();
-
-        if ((df->kind_ == kFileKindPackWAD || df->kind_ == kFileKindIPackWAD))
-        {
-            ajbsp::OpenMem(df->name_, df->file_);
-        }
-        else
-            ajbsp::OpenWad(df->name_);
-
-        ajbsp::CreateXWA(xwa_filename);
-
-        for (int i = 0; i < ajbsp::LevelsInWad(); i++)
-            ajbsp::BuildLevel(i);
-
-        ajbsp::FinishXWA();
-        ajbsp::CloseWad();
-
-        LogDebug("AJ_BuildNodes: FINISHED\n");
-
-        epi::SyncFilesystem();
-    }
-
-    return xwa_filename;
-}
-
 void ReadUMAPINFOLumps(void)
 {
     for (auto df : data_files)
@@ -1940,35 +1888,6 @@ int CheckGraphicLumpNumberForName(const char *name)
     return -1; // not found
 }
 
-int CheckXGLLumpNumberForName(const char *name)
-{
-    // limit search to stuff between XG_START and XG_END.
-
-    int  i;
-    char buf[9];
-
-    if (strlen(name) > 8)
-    {
-        LogWarning("CheckLumpNumberForName: Name '%s' longer than 8 chars!\n", name);
-        return -1;
-    }
-
-    for (i = 0; name[i]; i++)
-    {
-        buf[i] = epi::ToUpperASCII(name[i]);
-    }
-    buf[i] = 0;
-
-    // search backwards
-    for (i = (int)lump_info.size() - 1; i >= 0; i--)
-    {
-        if (lump_info[i].kind == kLumpXGL)
-            if (strncmp(lump_info[i].name, buf, 8) == 0)
-                return i;
-    }
-
-    return -1; // not found
-}
 
 int CheckMapLumpNumberForName(const char *name)
 {

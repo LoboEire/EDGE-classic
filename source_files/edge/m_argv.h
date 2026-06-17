@@ -36,9 +36,9 @@ int FindArgument(std::string_view long_name, int *total_parameters = nullptr);
 //  string
 std::string ArgumentValue(std::string_view long_name, int *total_parameters = nullptr);
 
-void CheckBooleanParameter(const std::string &parameter, bool *boolean_value, bool reverse);
+void CheckBooleanParameter(const char *parameter, bool *boolean_value, bool reverse);
 
-void CheckBooleanConsoleVariable(const std::string &parameter, ConsoleVariable *variable, bool reverse);
+void CheckBooleanConsoleVariable(const char *parameter, ConsoleVariable *variable, bool reverse);
 
 void ApplyResponseFile(std::string_view name);
 

@@ -1,6 +1,7 @@
 
 #include "../../r_backend.h"
 #include "g_game.h"
+#include "gl_profiling.h"
 #include "i_defs_gl.h"
 #include "r_colormap.h"
 #include "r_draw.h"
@@ -107,6 +108,14 @@ class GLRenderBackend : public RenderBackend
         LogPrint("OpenGL Max Texture Size: %d\n", max_texture_size_);
 
         RenderBackend::Init();
+
+#ifdef EDGE_PROFILING
+        if (SDL_GL_GetProcAddress("glQueryCounter") && SDL_GL_GetProcAddress("glGetInteger64v"))
+        {
+            edge_gl_gpu_profiling_available = true;
+            TracyGpuContext;
+        }
+#endif
     }
 
     void CaptureScreen(int32_t width, int32_t height, int32_t stride, uint8_t *dest)
@@ -135,6 +144,8 @@ class GLRenderBackend : public RenderBackend
 
     void FinishFrame()
     {
+        EDGE_GpuCollect;
+
         for (auto itr = on_frame_finished_.begin(); itr != on_frame_finished_.end(); itr++)
         {
             (*itr)();
@@ -217,6 +228,8 @@ class GLRenderBackend : public RenderBackend
     {
     }
 };
+
+bool edge_gl_gpu_profiling_available = false;
 
 static GLRenderBackend gl_render_backend;
 RenderBackend         *render_backend = &gl_render_backend;

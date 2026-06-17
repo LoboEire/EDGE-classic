@@ -50,8 +50,7 @@
 #include "r_colormap.h"
 #include "r_draw.h"
 #include "r_gldefs.h"
-#include "r_md2.h"
-#include "r_mdl.h"
+#include "r_model.h"
 #include "r_modes.h"
 #include "r_state.h"
 #include "s_music.h"
@@ -818,16 +817,13 @@ static void CastDrawer(void)
 
         const Image *skin_img = md->skins_[cast_order->model_skin_];
 
-        if (!skin_img)
+        if (!skin_img && md->model_->skin_id_list_.empty())
             skin_img = ImageForDummySkin();
 
         render_state->Clear(GL_DEPTH_BUFFER_BIT);
         render_state->Enable(GL_DEPTH_TEST);
 
-        if (md->md2_model_)
-            MD2RenderModel2D(md->md2_model_, skin_img, cast_state->frame, pos_x, pos_y, scale_x, scale_y, cast_order);
-        else if (md->mdl_model_)
-            MDLRenderModel2D(md->mdl_model_, cast_state->frame, pos_x, pos_y, scale_x, scale_y, cast_order);
+        RenderModel2D(md->model_, skin_img, cast_state->frame, pos_x, pos_y, scale_x, scale_y, cast_order);
 
         render_state->Disable(GL_DEPTH_TEST);
         return;

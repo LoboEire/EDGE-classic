@@ -66,7 +66,7 @@ inline bool IsSpaceASCII(int character)
 {
     return ((character > 0x8 && character < 0xE) || character == 0x20);
 }
-inline int ToLowerASCII(int character)
+inline constexpr int ToLowerASCII(int character)
 {
     if (character > '@' && character < '[')
         return character ^ 0x20;

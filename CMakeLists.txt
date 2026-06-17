@@ -47,6 +47,7 @@ endif()
 option(EDGE_SANITIZE "Enable code sanitizing" OFF)
 option(EDGE_SANITIZE_THREADS "Enable thread sanitizing (No-op with MSVC)" OFF)
 option(EDGE_SANITIZE_UB "Enable undefined behavior sanitizing (No-op with MSVC)" OFF)
+option(EDGE_PROFILING "Enable Profiling" OFF)
 option(EDGE_EXTRA_CHECKS "Enable diagnostic checks/functions" OFF)
 
 include("${CMAKE_SOURCE_DIR}/cmake/EDGEClassic.cmake")
@@ -223,6 +224,10 @@ if (EDGE_SOKOL)
   endif()
 else()
   find_package(OpenGL REQUIRED)
+endif()
+
+if (EDGE_PROFILING)
+  add_compile_definitions(EDGE_PROFILING TRACY_ENABLE)
 endif()
 
 if (EDGE_EXTRA_CHECKS)

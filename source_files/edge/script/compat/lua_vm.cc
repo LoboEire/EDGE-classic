@@ -3,6 +3,7 @@
 
 #include "../lua_debugger.h"
 #include "con_var.h"
+#include "edge_profiling.h"
 #include "epi_str_util.h"
 #include "i_system.h"
 #include "lua_compat.h"
@@ -143,6 +144,8 @@ static int  LuaDbgNOP(lua_State *L)
 
 void LuaCallGlobalFunction(lua_State *L, const char *function_name, MapObject *mo)
 {
+    EDGE_ZoneScoped;
+
     // If we try and call a lua script from DDF(e.g. LUA_RUN_SCRIPT()), but are running COAL, then log a warning and do
     // nothing
     if (GetCOALDetected())

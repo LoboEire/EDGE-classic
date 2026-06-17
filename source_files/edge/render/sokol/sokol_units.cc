@@ -26,6 +26,7 @@
 #include "AlmostEquals.h"
 #include "dm_state.h"
 #include "e_player.h"
+#include "edge_profiling.h"
 #include "epi.h"
 #include "i_defs_gl.h"
 #include "im_data.h"
@@ -56,12 +57,8 @@ extern ConsoleVariable cull_fog_color;
 std::unordered_map<GLuint, GLint> texture_clamp_s;
 std::unordered_map<GLuint, GLint> texture_clamp_t;
 
-// a single unit (polygon, quad, etc) to pass to the GL
 struct RendererUnit
 {
-    // unit mode (e.g. GL_TRIANGLE_FAN)
-    GLuint shape;
-
     // environment modes (GL_REPLACE, GL_MODULATE, GL_DECAL, GL_ADD)
     GLuint environment_mode[2];
 
@@ -79,6 +76,8 @@ struct RendererUnit
 
     RGBAColor fog_color   = kRGBANoValue;
     float     fog_density = 0;
+
+    uint64_t sort_key[3];
 };
 
 static RendererVertex local_verts[kMaximumLocalVertices];
@@ -141,8 +140,8 @@ void FinishUnitBatch(void)
 // contains "holes" (like sprites).  `blended' should be true if the
 // texture should be blended (like for translucent water or sprites).
 //
-RendererVertex *BeginRenderUnit(GLuint shape, int max_vert, GLuint env1, GLuint tex1, GLuint env2, GLuint tex2,
-                                int pass, BlendingMode blending, RGBAColor fog_color, float fog_density)
+RendererVertex *BeginRenderUnit(int max_vert, GLuint env1, GLuint tex1, GLuint env2, GLuint tex2, int pass,
+                                BlendingMode blending, RGBAColor fog_color, float fog_density)
 {
     if (render_backend->RenderUnitsLocked())
     {
@@ -169,7 +168,6 @@ RendererVertex *BeginRenderUnit(GLuint shape, int max_vert, GLuint env1, GLuint 
     if (env2 == kTextureEnvironmentDisable)
         tex2 = 0;
 
-    unit->shape               = shape;
     unit->environment_mode[0] = env1;
     unit->environment_mode[1] = env2;
     unit->texture[0]          = tex1;
@@ -183,6 +181,13 @@ RendererVertex *BeginRenderUnit(GLuint shape, int max_vert, GLuint env1, GLuint 
     unit->fog_density = fog_density;
 
     return local_verts + current_render_vert;
+}
+
+static inline uint8_t CompressEnvMode(GLuint env)
+{
+    if (env == (GLuint)kTextureEnvironmentDisable) return 0;
+    if (env == (GLuint)kTextureEnvironmentSkipRGB) return 1;
+    return 2;
 }
 
 //
@@ -206,6 +211,35 @@ void EndRenderUnit(int actual_vert)
 
     unit->count = actual_vert;
 
+    RGBAColor key_fog_color;
+    uint32_t  key_fog_density_bits;
+    if ((unit->blending & kBlendingNoFog) || unit->fog_color == kRGBANoValue)
+    {
+        key_fog_color        = kRGBANoValue;
+        key_fog_density_bits = 0;
+    }
+    else
+    {
+        key_fog_color = unit->fog_color;
+        memcpy(&key_fog_density_bits, &unit->fog_density, sizeof(float));
+    }
+
+    uint8_t key_alpha = ((uint32_t)unit->blending & (kBlendingLess | kBlendingGEqual))
+                            ? epi::GetRGBAAlpha(local_verts[unit->first].rgba)
+                            : 0;
+
+    unit->sort_key[0] = ((uint64_t)(uint8_t)unit->pass << 56) |
+                        ((uint64_t)(uint32_t)unit->texture[0] << 24) |
+                        ((uint64_t)(uint16_t)unit->blending << 8) |
+                        ((uint64_t)CompressEnvMode(unit->environment_mode[0]) << 6) |
+                        ((uint64_t)CompressEnvMode(unit->environment_mode[1]) << 4);
+
+    unit->sort_key[1] = ((uint64_t)(uint32_t)unit->texture[1] << 32) |
+                        ((uint64_t)(uint32_t)key_fog_color);
+
+    unit->sort_key[2] = ((uint64_t)key_fog_density_bits << 32) |
+                        ((uint64_t)key_alpha << 24);
+
     current_render_vert += actual_vert;
     current_render_unit++;
 
@@ -217,22 +251,9 @@ struct Compare_Unit_pred
 {
     inline bool operator()(const RendererUnit *A, const RendererUnit *B) const
     {
-        if (A->pass != B->pass)
-            return A->pass < B->pass;
-
-        if (A->texture[0] != B->texture[0])
-            return A->texture[0] < B->texture[0];
-
-        if (A->texture[1] != B->texture[1])
-            return A->texture[1] < B->texture[1];
-
-        if (A->environment_mode[0] != B->environment_mode[0])
-            return A->environment_mode[0] < B->environment_mode[0];
-
-        if (A->environment_mode[1] != B->environment_mode[1])
-            return A->environment_mode[1] < B->environment_mode[1];
-
-        return A->blending < B->blending;
+        if (A->sort_key[0] != B->sort_key[0]) return A->sort_key[0] < B->sort_key[0];
+        if (A->sort_key[1] != B->sort_key[1]) return A->sort_key[1] < B->sort_key[1];
+        return A->sort_key[2] < B->sort_key[2];
     }
 };
 
@@ -251,24 +272,7 @@ static void RenderFlush()
         // assume unit will require a command
         num_commands++;
 
-        switch (unit->shape)
-        {
-        case GL_QUADS:
-            num_vertices += unit->count / 4 * 6; // quads are emulated as triangle strips, and use 6 vertices internally
-            break;
-        case GL_TRIANGLES:
-            num_vertices += unit->count;
-            break;
-        case GL_POLYGON:
-            num_vertices += (unit->count - 1) * 3;
-            break;
-        case GL_QUAD_STRIP:
-            num_vertices += unit->count;
-            break;
-        case GL_LINES:
-            num_vertices += (unit->count / 2) * 6; // thick lines are emulated as quads
-            break; // quads are emulated as triangle strips, and use 6 vertices internally
-        }
+        num_vertices += unit->count;
     }
 
     render_backend->Flush(num_commands, num_vertices);
@@ -282,6 +286,8 @@ static void RenderFlush()
 //
 void RenderCurrentUnits(void)
 {
+    EDGE_ZoneScoped;
+
     if (render_backend->RenderUnitsLocked())
     {
         FatalError("RenderCurrentUnits - Render units are locked");
@@ -402,10 +408,9 @@ void RenderCurrentUnits(void)
 
         if (unit->blending & kBlendingLess)
         {
-            // Alpha function is updated below, because the alpha
-            // value can change from unit to unit while the
-            // kBlendingLess flag remains set.
             render_state->Enable(GL_ALPHA_TEST);
+            float a = epi::GetRGBAAlpha(local_verts[unit->first].rgba) / 255.0f;
+            render_state->AlphaFunction(GL_GREATER, a * 0.66f);
         }
         else if (unit->blending & kBlendingMasked)
         {
@@ -419,13 +424,6 @@ void RenderCurrentUnits(void)
         }
         else
             render_state->Disable(GL_ALPHA_TEST);
-
-        if (unit->blending & kBlendingLess)
-        {
-            // NOTE: assumes alpha is constant over whole polygon
-            float a = epi::GetRGBAAlpha(local_verts[unit->first].rgba) / 255.0f;
-            render_state->AlphaFunction(GL_GREATER, a * 0.66f);
-        }
 
         if (draw_culling.d_ && !(unit->blending & kBlendingNoFog) &&
             (render_layer == kRenderLayerSolid || render_layer == kRenderLayerTransparent))
@@ -490,152 +488,7 @@ void RenderCurrentUnits(void)
             sgl_disable_texture();
         }
 
-        // glBegin(unit->shape);
-        if (unit->shape == GL_QUADS)
-        {
-            sgl_begin_quads();
-        }
-        else if (unit->shape == GL_TRIANGLES)
-        {
-            sgl_begin_triangles();
-        }
-        else if (unit->shape == GL_POLYGON)
-        {
-            // TODO: can be strips
-
-            const RendererVertex *V = local_verts + unit->first;
-
-            sgl_begin_triangles();
-
-            for (int k = 0; k < unit->count - 1; k++)
-            {
-                const RendererVertex *V1 = &V[k + 1];
-                const RendererVertex *V2 = &V[((k + 2) % unit->count)];
-
-                sgl_v3f_t4f_c4b(V->position.X, V->position.Y, V->position.Z, V->texture_coordinates[0].X,
-                                V->texture_coordinates[0].Y, V->texture_coordinates[1].X, V->texture_coordinates[1].Y,
-                                epi::GetRGBARed(V->rgba), epi::GetRGBAGreen(V->rgba), epi::GetRGBABlue(V->rgba),
-                                epi::GetRGBAAlpha(V->rgba));
-
-                sgl_v3f_t4f_c4b(V1->position.X, V1->position.Y, V1->position.Z, V1->texture_coordinates[0].X,
-                                V1->texture_coordinates[0].Y, V1->texture_coordinates[1].X,
-                                V1->texture_coordinates[1].Y, epi::GetRGBARed(V1->rgba), epi::GetRGBAGreen(V1->rgba),
-                                epi::GetRGBABlue(V1->rgba), epi::GetRGBAAlpha(V1->rgba));
-
-                sgl_v3f_t4f_c4b(V2->position.X, V2->position.Y, V2->position.Z, V2->texture_coordinates[0].X,
-                                V2->texture_coordinates[0].Y, V2->texture_coordinates[1].X,
-                                V2->texture_coordinates[1].Y, epi::GetRGBARed(V2->rgba), epi::GetRGBAGreen(V2->rgba),
-                                epi::GetRGBABlue(V2->rgba), epi::GetRGBAAlpha(V2->rgba));
-            }
-
-            sgl_end();
-            continue;
-        }
-        else if (unit->shape == GL_LINES)
-        {
-            sgl_disable_texture();
-
-            float state_width = render_state->GetLineWidth();
-
-            /*
-            if (AlmostEquals(state_width, 1.0f))
-            {
-                sgl_begin_lines();
-                const RendererVertex *V = local_verts + unit->first;
-
-                for (int v_idx = 0, v_last_idx = unit->count; v_idx < v_last_idx; v_idx++, V++)
-                {
-                    sgl_v3f_c4b(V->position.X, V->position.Y, V->position.Z, epi::GetRGBARed(V->rgba),
-                                epi::GetRGBAGreen(V->rgba), epi::GetRGBABlue(V->rgba), epi::GetRGBAAlpha(V->rgba));
-                }
-
-                sgl_end();
-            }
-            else
-            */
-            {
-
-                // This does not currently do AA smoothing
-                // https://github.com/pbdot/Lines
-                // see cpu_lines.h for AA shader, once multishader support is in
-                // so can have a shader specifically for lines
-
-                sgl_enable_line();
-                sgl_begin_quads();
-
-                const RendererVertex *V = local_verts + unit->first;
-
-                HMM_Vec2 aa_radius = {{2.0f, 2.0f}};
-
-                float line_width       = HMM_MAX(1.0f, state_width) + aa_radius.X;
-                float extension_length = aa_radius.Y;
-
-                for (int v_idx = 0; v_idx < unit->count; v_idx += 2)
-                {
-                    const RendererVertex *src_v0 = V + v_idx;
-                    const RendererVertex *src_v1 = src_v0 + 1;
-
-                    // use first vertice color
-                    uint8_t red   = epi::GetRGBARed(src_v0->rgba);
-                    uint8_t green = epi::GetRGBAGreen(src_v0->rgba);
-                    uint8_t blue  = epi::GetRGBABlue(src_v0->rgba);
-                    uint8_t alpha = epi::GetRGBAAlpha(src_v0->rgba);
-
-                    HMM_Vec2 v0 = {{src_v0->position[0], src_v0->position[1]}};
-                    HMM_Vec2 v1 = {{src_v1->position[0], src_v1->position[1]}};
-
-                    HMM_Vec2 line_vector = HMM_SubV2(v1, v0);
-                    float    line_length = HMM_LenV2(line_vector) + 2.0f * extension_length;
-                    HMM_Vec2 dir         = HMM_NormV2(line_vector);
-                    HMM_Vec2 normal      = {{-dir.Y * line_width * 0.5f, dir.X * line_width * 0.5f}};
-
-                    HMM_Vec2 extension = HMM_MulV2({{extension_length, extension_length}}, dir);
-
-                    HMM_Vec2 a1 = {{v0.X - normal.X - extension.X, v0.Y - normal.Y - extension.Y}};
-                    HMM_Vec2 a0 = {{v0.X + normal.X - extension.X, v0.Y + normal.Y - extension.Y}};
-
-                    HMM_Vec2 b1 = {{v1.X - normal.X + extension.X, v1.Y - normal.Y + extension.Y}};
-                    HMM_Vec2 b0 = {{v1.X + normal.X + extension.X, v1.Y + normal.Y + extension.Y}};
-
-                    float factor = 0.5f;
-
-                    sgl_v3f_t4f_c4b(a1.X, a1.Y, src_v0->position.Z, line_width, -factor * line_length, line_width,
-                                    factor * line_length, red, green, blue, alpha);
-
-                    sgl_v3f_t4f_c4b(a0.X, a0.Y, src_v0->position.Z, -line_width, -factor * line_length, line_width,
-                                    factor * line_length, red, green, blue, alpha);
-
-                    sgl_v3f_t4f_c4b(b0.X, b0.Y, src_v1->position.Z, -line_width, factor * line_length, line_width,
-                                    factor * line_length, red, green, blue, alpha);
-
-                    sgl_v3f_t4f_c4b(b1.X, b1.Y, src_v1->position.Z, line_width, -factor * line_length, line_width,
-                                    factor * line_length, red, green, blue, alpha);
-                }
-
-                sgl_end();
-                sgl_disable_line();
-            }
-
-            continue;
-        }
-        else if (unit->shape == GL_QUAD_STRIP)
-        {
-            // Note mapping to triangle strip
-            sgl_begin_triangle_strip();
-
-            for (int k = 0; k < unit->count; k++)
-            {
-                const RendererVertex *V = local_verts + unit->first + k;
-
-                sgl_v3f_t4f_c4b(V->position.X, V->position.Y, V->position.Z, V->texture_coordinates[0].X,
-                                V->texture_coordinates[0].Y, V->texture_coordinates[1].X, V->texture_coordinates[1].Y,
-                                epi::GetRGBARed(V->rgba), epi::GetRGBAGreen(V->rgba), epi::GetRGBABlue(V->rgba),
-                                epi::GetRGBAAlpha(V->rgba));
-            }
-
-            sgl_end();
-            continue;
-        }
+        sgl_begin_triangles();
 
         const RendererVertex *V = local_verts + unit->first;
 

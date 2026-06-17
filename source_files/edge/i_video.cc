@@ -21,6 +21,7 @@
 #include "con_main.h"
 #include "ddf_main.h"
 #include "dm_state.h"
+#include "edge_profiling.h"
 #include "epi_str_compare.h"
 #include "epi_str_util.h"
 #include "i_defs_gl.h"
@@ -412,6 +413,8 @@ void StartFrame(void)
 
 static void SwapBuffers(void)
 {
+    EDGE_ZoneScoped;
+
     render_backend->SwapBuffers();
 
 #ifndef SOKOL_D3D11
@@ -426,46 +429,61 @@ void FinishFrame(void)
 
     SwapBuffers();
 
-    if (ConsoleIsVisible())
-        GrabCursor(false);
-    else
+    EDGE_TracyPlot("draw_render_units", (int64_t)ec_frame_stats.draw_render_units);
+    EDGE_TracyPlot("draw_wall_parts", (int64_t)ec_frame_stats.draw_wall_parts);
+    EDGE_TracyPlot("draw_planes", (int64_t)ec_frame_stats.draw_planes);
+    EDGE_TracyPlot("draw_things", (int64_t)ec_frame_stats.draw_things);
+
     {
-        if (grab_mouse.CheckModified())
-            GrabCursor(grab_state);
+        EDGE_ZoneNamedN(ZoneHandleCursor, "HandleCursor", true);
+
+        if (ConsoleIsVisible())
+            GrabCursor(false);
         else
-            GrabCursor(true);
-    }
-
-    if (!single_tics)
-    {
-        if (framerate_limit.d_ >= kTicRate)
         {
-            uint64_t        target_time = 1000000ull / framerate_limit.d_;
-            static uint64_t start_time;
-
-            while (1)
-            {
-                uint64_t current_time   = GetMicroseconds();
-                uint64_t elapsed_time   = current_time - start_time;
-                uint64_t remaining_time = 0;
-
-                if (elapsed_time >= target_time)
-                {
-                    start_time = current_time;
-                    break;
-                }
-
-                remaining_time = target_time - elapsed_time;
-
-                if (remaining_time > 1000)
-                {
-                    SleepForMilliseconds((remaining_time - 1000) / 1000);
-                }
-            }
+            if (grab_mouse.CheckModified())
+                GrabCursor(grab_state);
+            else
+                GrabCursor(true);
         }
     }
 
-    fractional_tic = (float)(GetMilliseconds() * kTicRate % 1000) / 1000;
+    {
+        EDGE_ZoneNamedN(ZoneFrameLimiting, "FrameLimiting", true);
+
+        if (!single_tics)
+        {
+            if (framerate_limit.d_ >= kTicRate)
+            {
+                uint64_t        target_time = 1000000ull / framerate_limit.d_;
+                static uint64_t start_time;
+
+                while (1)
+                {
+                    uint64_t current_time   = GetMicroseconds();
+                    uint64_t elapsed_time   = current_time - start_time;
+                    uint64_t remaining_time = 0;
+
+                    if (elapsed_time >= target_time)
+                    {
+                        start_time += target_time;
+                        if (current_time - start_time >= target_time)
+                            start_time = current_time;
+                        break;
+                    }
+
+                    remaining_time = target_time - elapsed_time;
+
+                    if (remaining_time > 2000)
+                    {
+                        SleepForMilliseconds((remaining_time - 2000) / 1000);
+                    }
+                }
+            }
+        }
+
+        fractional_tic = (float)(GetMilliseconds() * kTicRate % 1000) / 1000;
+    }
 
     if (vsync.CheckModified())
     {
@@ -490,6 +508,8 @@ void FinishFrame(void)
 
     if (monitor_aspect_ratio.CheckModified() || forced_pixel_aspect_ratio.CheckModified())
         DeterminePixelAspect();
+
+    EDGE_FrameMark;
 }
 
 void ShutdownGraphics(void)

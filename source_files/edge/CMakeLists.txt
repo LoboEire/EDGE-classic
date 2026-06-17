@@ -3,6 +3,7 @@
 ##########################################
 
 set (EDGE_SOURCE_FILES
+  bsp.cc
   i_movie.cc
   i_ctrl.cc
   i_video.cc
@@ -99,6 +100,7 @@ set (EDGE_SOURCE_FILES
   w_files.cc
   w_flat.cc
   w_model.cc
+  r_model.cc
   w_epk.cc
   w_sprite.cc
   w_texture.cc
@@ -113,8 +115,7 @@ set (EDGE_SOURCE_FILES
   
 set (EDGE_GL_SOURCE_FILES
   render/gl/gl_backend.cc
-  render/gl/gl_md2.cc
-  render/gl/gl_mdl.cc
+  render/gl/gl_model.cc
   render/gl/gl_sky.cc
   render/gl/gl_state.cc
   render/gl/gl_units.cc
@@ -122,10 +123,9 @@ set (EDGE_GL_SOURCE_FILES
 
 set (EDGE_SOKOL_SOURCE_FILES
   render/sokol/sokol_backend.cc
-  render/sokol/sokol_gl.cc  
+  render/sokol/sokol_gl.cc
   render/sokol/sokol_images.cc
-  render/sokol/sokol_md2.cc
-  render/sokol/sokol_mdl.cc
+  render/sokol/sokol_model.cc
   render/sokol/sokol_pipeline.cc
   render/sokol/sokol_sky.cc
   render/sokol/sokol_state.cc
@@ -181,9 +181,9 @@ endif()
 target_include_directories(edge-classic PRIVATE ./)
 
 set (EDGE_LINK_LIBRARIES
-  ajbsp
   ddf
   epi
+  edge_tracy
   ${SDL2_LIBRARIES}
   almostequals
   fluidlite
@@ -213,6 +213,13 @@ if (EDGE_SOKOL)
   endif()
 else ()
 	list(APPEND EDGE_LINK_LIBRARIES OpenGL::GL)
+endif()
+
+if (EDGE_PROFILING)
+  list (APPEND EDGE_LINK_LIBRARIES TracyClient)
+  if (NOT EDGE_SOKOL)
+    target_compile_definitions(edge-classic PRIVATE GL_GLEXT_PROTOTYPES)
+  endif()
 endif()
 
 target_link_libraries(edge-classic PRIVATE ${EDGE_LINK_LIBRARIES})
