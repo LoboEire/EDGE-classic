@@ -374,7 +374,7 @@ Vertex *NewVertexDegenerate(Vertex *start, Vertex *end)
     vert->x_ = start->x_;
     vert->y_ = start->x_;
 
-    if (AlmostEquals(dlen, 0.0))
+    if (epi::AlmostEquals(dlen, 0.0))
         FatalError("AJBSP: NewVertexDegenerate: bad delta!\n");
 
     dx /= dlen;

@@ -16,7 +16,7 @@ add_library(
   epi_scanner.cpp
 )
 
-set (EPI_LIBRARIES almostequals HandmadeMath stb)
+set (EPI_LIBRARIES HandmadeMath stb)
 
 target_link_libraries(epi PUBLIC ${EPI_LIBRARIES})
 

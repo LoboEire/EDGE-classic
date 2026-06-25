@@ -23,7 +23,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "dm_state.h"
 #include "e_player.h"
 #include "epi.h"
@@ -354,7 +354,7 @@ void RenderCurrentUnits(void)
             render_state->ClearColor(unit->fog_color);
             render_state->FogColor(unit->fog_color);
             render_state->FogDensity(std::log1p(density));
-            if (!AlmostEquals(density, 0.0f))
+            if (!epi::AlmostEquals(density, 0.0f))
                 render_state->Enable(GL_FOG);
             else
                 render_state->Disable(GL_FOG);
@@ -538,7 +538,7 @@ void RenderCurrentUnits(void)
             float state_width = render_state->GetLineWidth();
 
             /*
-            if (AlmostEquals(state_width, 1.0f))
+            if (epi::AlmostEquals(state_width, 1.0f))
             {
                 sgl_begin_lines();
                 const RendererVertex *V = local_verts + unit->first;

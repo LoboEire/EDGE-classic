@@ -21,7 +21,7 @@
 #include <algorithm>
 #include <forward_list>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "bot_think.h"
 #include "con_main.h"
 #include "ddf_main.h"
@@ -535,7 +535,7 @@ static void BotTryOpenArea(int idx, int parent, float cost)
         area.parent = parent;
         area.G      = cost;
 
-        if (AlmostEquals(area.H, 0.0f))
+        if (epi::AlmostEquals(area.H, 0.0f))
             area.H = BotEstimateH(&level_subsectors[idx]);
     }
 }

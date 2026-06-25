@@ -203,7 +203,7 @@ Seg *SplitSeg(Seg *old_seg, double x, double y)
 inline void ComputeIntersection(Seg *seg, Seg *part, double perp_c, double perp_d, double *x, double *y)
 {
     // horizontal partition against vertical seg
-    if (AlmostEquals(part->pdy_, 0.0) && AlmostEquals(seg->pdx_, 0.0))
+    if (epi::AlmostEquals(part->pdy_, 0.0) && epi::AlmostEquals(seg->pdx_, 0.0))
     {
         *x = seg->psx_;
         *y = part->psy_;
@@ -211,7 +211,7 @@ inline void ComputeIntersection(Seg *seg, Seg *part, double perp_c, double perp_
     }
 
     // vertical partition against horizontal seg
-    if (AlmostEquals(part->pdx_, 0.0) && AlmostEquals(seg->pdy_, 0.0))
+    if (epi::AlmostEquals(part->pdx_, 0.0) && epi::AlmostEquals(seg->pdy_, 0.0))
     {
         *x = part->psx_;
         *y = seg->psy_;
@@ -221,12 +221,12 @@ inline void ComputeIntersection(Seg *seg, Seg *part, double perp_c, double perp_
     // 0 = start, 1 = end
     double ds = perp_c / (perp_c - perp_d);
 
-    if (AlmostEquals(seg->pdx_, 0.0))
+    if (epi::AlmostEquals(seg->pdx_, 0.0))
         *x = seg->psx_;
     else
         *x = seg->psx_ + (seg->pdx_ * ds);
 
-    if (AlmostEquals(seg->pdy_, 0.0))
+    if (epi::AlmostEquals(seg->pdy_, 0.0))
         *y = seg->psy_;
     else
         *y = seg->psy_ + (seg->pdy_ * ds);
@@ -519,7 +519,7 @@ double EvalPartition(QuadTree *tree, Seg *part, double best_cost)
     //       partition lines that lie either purely horizontally or
     //       purely vertically.
 
-    if (!AlmostEquals(part->pdx_, 0.0) && !AlmostEquals(part->pdy_, 0.0))
+    if (!epi::AlmostEquals(part->pdx_, 0.0) && !epi::AlmostEquals(part->pdy_, 0.0))
         info.cost += 25.0;
 
     return info.cost;
@@ -537,7 +537,7 @@ void EvaluateFastWorker(QuadTree *tree, Seg **best_H, Seg **best_V, int mid_x, i
         if (part->linedef_->is_precious)
             continue;
 
-        if (AlmostEquals(part->pdy_, 0.0))
+        if (epi::AlmostEquals(part->pdy_, 0.0))
         {
             // horizontal seg
             if (!*best_H)
@@ -553,7 +553,7 @@ void EvaluateFastWorker(QuadTree *tree, Seg **best_H, Seg **best_V, int mid_x, i
                     *best_H = part;
             }
         }
-        else if (AlmostEquals(part->pdx_, 0.0))
+        else if (epi::AlmostEquals(part->pdx_, 0.0))
         {
             // vertical seg
             if (!*best_V)
@@ -1112,7 +1112,7 @@ int QuadTree::OnLineSide(const Seg *part) const
     int p1, p2;
 
     // handle simple cases (vertical & horizontal lines)
-    if (AlmostEquals(part->pdx_, 0.0))
+    if (epi::AlmostEquals(part->pdx_, 0.0))
     {
         p1 = (tx1 > part->psx_) ? +1 : -1;
         p2 = (tx2 > part->psx_) ? +1 : -1;
@@ -1123,7 +1123,7 @@ int QuadTree::OnLineSide(const Seg *part) const
             p2 = -p2;
         }
     }
-    else if (AlmostEquals(part->pdy_, 0.0))
+    else if (epi::AlmostEquals(part->pdy_, 0.0))
     {
         p1 = (ty1 < part->psy_) ? +1 : -1;
         p2 = (ty2 < part->psy_) ? +1 : -1;

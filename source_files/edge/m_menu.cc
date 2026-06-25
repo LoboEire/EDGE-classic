@@ -2830,7 +2830,7 @@ void MenuDrawItems(Style *style, bool graphical_item)
                 y += 15 + style->definition_->entry_spacing_;
             }
         }
-        if (AlmostEquals(ShortestLine, 10000.0f) && AlmostEquals(TallestLine, 0.0f))
+        if (epi::AlmostEquals(ShortestLine, 10000.0f) && epi::AlmostEquals(TallestLine, 0.0f))
         {
             ShortestLine = 20.0f;
             TallestLine  = 20.0f;

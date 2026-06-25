@@ -27,7 +27,7 @@
 
 #include <map>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "coal.h"
 #include "dm_defs.h"
 #include "dm_state.h"
@@ -961,7 +961,7 @@ void BSPWalkThing(DrawSubsector *dsub, MapObject *mo)
         return;
 
     // ignore invisible things
-    if (AlmostEquals(mo->visibility_, 0.0f))
+    if (epi::AlmostEquals(mo->visibility_, 0.0f))
         return;
 
     bool is_model = (mo->state_->flags & kStateFrameFlagModel) ? true : false;
@@ -1046,7 +1046,7 @@ void BSPWalkThing(DrawSubsector *dsub, MapObject *mo)
     float   sink_mult = 0;
     float   bob_mult  = 0;
     Sector *cur_sec   = mo->subsector_->sector;
-    if (!cur_sec->extrafloor_used && !cur_sec->height_sector && AlmostEquals(mz, cur_sec->floor_height))
+    if (!cur_sec->extrafloor_used && !cur_sec->height_sector && epi::AlmostEquals(mz, cur_sec->floor_height))
     {
         if (!(mo->flags_ & kMapObjectFlagNoGravity))
         {
@@ -1271,7 +1271,7 @@ static bool RenderThing(DrawThing *dthing, bool solid)
     gzb += dthing->hover_dz;
 
     if (dthing->is_model || (mo->flags_ & kMapObjectFlagFuzzy) ||
-        ((mo->hyper_flags_ & kHyperFlagHover) && AlmostEquals(dthing->sink_mult, 0.0f)))
+        ((mo->hyper_flags_ & kHyperFlagHover) && epi::AlmostEquals(dthing->sink_mult, 0.0f)))
     {
         /* nothing, don't adjust clipping */
     }
@@ -1617,7 +1617,7 @@ bool RenderThings(DrawFloor *dfloor, bool solid)
             dt = next_dt;
 
             cmp_val = dt->translated_z - curr_dt->translated_z;
-            if (AlmostEquals(cmp_val, 0.0f))
+            if (epi::AlmostEquals(cmp_val, 0.0f))
             {
                 // Resolve Z fight by letting the mobj pointer values settle it
                 int offset = dt->map_object - curr_dt->map_object;

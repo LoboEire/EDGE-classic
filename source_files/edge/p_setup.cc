@@ -28,7 +28,7 @@
 #include <map>
 #include <unordered_map>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "am_map.h"
 #include "ddf_colormap.h"
 #include "ddf_main.h"
@@ -839,9 +839,9 @@ static inline void ComputeLinedefData(Line *ld, int side0, int side1)
     ld->delta_x = v2->X - v1->X;
     ld->delta_y = v2->Y - v1->Y;
 
-    if (AlmostEquals(ld->delta_x, 0.0f))
+    if (epi::AlmostEquals(ld->delta_x, 0.0f))
         ld->slope_type = kLineClipVertical;
-    else if (AlmostEquals(ld->delta_y, 0.0f))
+    else if (epi::AlmostEquals(ld->delta_y, 0.0f))
         ld->slope_type = kLineClipHorizontal;
     else if (ld->delta_y / ld->delta_x > 0)
         ld->slope_type = kLineClipPositive;
@@ -1653,10 +1653,10 @@ static void LoadUDMFSectors()
             ss->ceiling.translucency = calph;
 
             // rotations
-            if (!AlmostEquals(rf, 0.0f))
+            if (!epi::AlmostEquals(rf, 0.0f))
                 ss->floor.rotation = epi::BAMFromDegrees(rf);
 
-            if (!AlmostEquals(rc, 0.0f))
+            if (!epi::AlmostEquals(rc, 0.0f))
                 ss->ceiling.rotation = epi::BAMFromDegrees(rc);
 
             // granular scaling
@@ -2460,7 +2460,7 @@ static void LoadUDMFThings()
             {
                 udmf_thing->target_visibility_ = alpha;
                 udmf_thing->alpha_             = alpha;
-                if (!AlmostEquals(healthfac, 1.0f))
+                if (!epi::AlmostEquals(healthfac, 1.0f))
                 {
                     if (healthfac < 0)
                     {
@@ -2475,16 +2475,16 @@ static void LoadUDMFThings()
                 }
                 // Treat 'scale' and 'scalex/scaley' as one or the other; don't
                 // try to juggle both
-                if (!AlmostEquals(scale, 0.0f))
+                if (!epi::AlmostEquals(scale, 0.0f))
                 {
                     udmf_thing->scale_ = udmf_thing->model_scale_ = scale;
                     udmf_thing->height_ *= scale;
                     udmf_thing->radius_ *= scale;
                 }
-                else if (!AlmostEquals(scalex, 0.0f) || !AlmostEquals(scaley, 0.0f))
+                else if (!epi::AlmostEquals(scalex, 0.0f) || !epi::AlmostEquals(scaley, 0.0f))
                 {
-                    float sx           = AlmostEquals(scalex, 0.0f) ? 1.0f : scalex;
-                    float sy           = AlmostEquals(scaley, 0.0f) ? 1.0f : scaley;
+                    float sx           = epi::AlmostEquals(scalex, 0.0f) ? 1.0f : scalex;
+                    float sy           = epi::AlmostEquals(scaley, 0.0f) ? 1.0f : scaley;
                     udmf_thing->scale_ = udmf_thing->model_scale_ = sy;
                     udmf_thing->aspect_ = udmf_thing->model_aspect_ = (sx / sy);
                     udmf_thing->height_ *= sy;
@@ -3009,7 +3009,7 @@ void GroupLines(void)
                 Vertex *vert   = sector->lines[j]->vertex_1;
                 bool    add_it = true;
                 for (HMM_Vec3 v : f_zverts)
-                    if (AlmostEquals(v.X, vert->X) && AlmostEquals(v.Y, vert->Y))
+                    if (epi::AlmostEquals(v.X, vert->X) && epi::AlmostEquals(v.Y, vert->Y))
                         add_it = false;
                 if (add_it)
                 {
@@ -3039,7 +3039,7 @@ void GroupLines(void)
                 vert   = sector->lines[j]->vertex_2;
                 add_it = true;
                 for (HMM_Vec3 v : f_zverts)
-                    if (AlmostEquals(v.X, vert->X) && AlmostEquals(v.Y, vert->Y))
+                    if (epi::AlmostEquals(v.X, vert->X) && epi::AlmostEquals(v.Y, vert->Y))
                         add_it = false;
                 if (add_it)
                 {
@@ -3103,10 +3103,10 @@ void GroupLines(void)
                 bool    add_it_v1 = true;
                 bool    add_it_v2 = true;
                 for (HMM_Vec3 v : f_zverts)
-                    if (AlmostEquals(v.X, vert->X) && AlmostEquals(v.Y, vert->Y))
+                    if (epi::AlmostEquals(v.X, vert->X) && epi::AlmostEquals(v.Y, vert->Y))
                         add_it_v1 = false;
                 for (HMM_Vec3 v : f_zverts)
-                    if (AlmostEquals(v.X, vert2->X) && AlmostEquals(v.Y, vert2->Y))
+                    if (epi::AlmostEquals(v.X, vert2->X) && epi::AlmostEquals(v.Y, vert2->Y))
                         add_it_v2 = false;
                 if (add_it_v1)
                 {
@@ -3155,12 +3155,12 @@ void GroupLines(void)
                         c_zverts.push_back({{vert2->X, vert2->Y, sector->ceiling_height}});
                 }
                 if ((vert->Z < 32767.0f && vert->Z > -32768.0f) && (vert2->Z < 32767.0f && vert2->Z > -32768.0f) &&
-                    AlmostEquals(vert->Z, vert2->Z))
+                    epi::AlmostEquals(vert->Z, vert2->Z))
                 {
                     floor_z_lines++;
                 }
                 if ((vert->W < 32767.0f && vert->W > -32768.0f) && (vert2->W < 32767.0f && vert2->W > -32768.0f) &&
-                    AlmostEquals(vert->W, vert2->W))
+                    epi::AlmostEquals(vert->W, vert2->W))
                 {
                     ceil_z_lines++;
                 }

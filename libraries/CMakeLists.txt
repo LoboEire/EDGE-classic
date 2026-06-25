@@ -1,4 +1,3 @@
-add_subdirectory(almostequals)
 add_subdirectory(miniaudio)
 add_subdirectory(fluidlite)
 if (EDGE_SOKOL)

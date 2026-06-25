@@ -32,7 +32,7 @@
 
 #include <float.h>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "dm_state.h"
 #include "epi.h"
 #include "epi_doomdefs.h"
@@ -89,7 +89,7 @@ static void RecurseSound(Sector *sec, int soundblocks, int player)
     {
         if (nd->map_object != nullptr)
         {
-            if (!AlmostEquals(nd->map_object->info_->hear_distance_,
+            if (!epi::AlmostEquals(nd->map_object->info_->hear_distance_,
                               -1.0f)) // if we have hear_distance set
             {
                 float distance;
@@ -194,7 +194,7 @@ bool DoMove(MapObject *actor, bool path)
         {
             float sec_fh =
                 (tn->sector->floor_vertex_slope && sector == tn->sector) ? actor->floor_z_ : tn->sector->floor_height;
-            if (!AlmostEquals(actor->z, sec_fh))
+            if (!epi::AlmostEquals(actor->z, sec_fh))
                 continue;
             if (fric < 0.0f || tn->sector->properties.friction < fric)
             {
@@ -208,7 +208,7 @@ bool DoMove(MapObject *actor, bool path)
     // use momentum or the delta between x/y and old_x/y here. Results look pretty
     // similar for high friction areas, but I've afforded a little more traction
     // for monsters on ice/low friction
-    if (fric < 0.0f || AlmostEquals(fric, kFrictionDefault))
+    if (fric < 0.0f || epi::AlmostEquals(fric, kFrictionDefault))
         fric = kFrictionDefault;
     else if (fric < kFrictionDefault)
     {

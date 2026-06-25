@@ -39,7 +39,7 @@
 
 #include <float.h>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "dm_defs.h"
 #include "dm_state.h"
 #include "epi.h"
@@ -301,7 +301,7 @@ static bool CheckAbsoluteLineCallback(Line *ld, void *data)
         if ((move_check.extended_flags & kExtendedFlagMonster) &&
             ((ld->flags & kLineFlagBlockGroundedMonsters) ||
              (ld->special && (ld->special->line_effect_ & kLineEffectTypeBlockGroundedMonsters))) &&
-            (AlmostEquals(move_check.mover->z, move_check.mover->floor_z_)))
+            (epi::AlmostEquals(move_check.mover->z, move_check.mover->floor_z_)))
         {
             return false;
         }
@@ -317,7 +317,7 @@ static bool CheckAbsoluteLineCallback(Line *ld, void *data)
     for (int i = 0; i < ld->gap_number; i++)
     {
         // -AJA- FIXME: this kOnFloorZ stuff is a DIRTY HACK!
-        if (AlmostEquals(move_check.z, kOnFloorZ) || AlmostEquals(move_check.z, kOnCeilingZ))
+        if (epi::AlmostEquals(move_check.z, kOnFloorZ) || epi::AlmostEquals(move_check.z, kOnCeilingZ))
         {
             if (move_check.mover->height_ <= (ld->gaps[i].ceiling - ld->gaps[i].floor))
                 return true;
@@ -356,7 +356,7 @@ static bool CheckAbsoluteThingCallback(MapObject *thing, void *data)
         return true; // no we missed this thing
 
     // -AJA- FIXME: this kOnFloorZ stuff is a DIRTY HACK!
-    if (!AlmostEquals(move_check.z, kOnFloorZ) && !AlmostEquals(move_check.z, kOnCeilingZ))
+    if (!epi::AlmostEquals(move_check.z, kOnFloorZ) && !epi::AlmostEquals(move_check.z, kOnCeilingZ))
     {
         // -KM- 1998/9/19 True 3d gameplay checks.
         if ((move_check.flags & kMapObjectFlagMissile) || level_flags.true_3d_gameplay)
@@ -502,7 +502,7 @@ static bool CheckRelativeLineCallback(Line *ld, void *data)
             (((ld->special && (ld->special->line_effect_ & kLineEffectTypeBlockGroundedMonsters)) ||
               (ld->flags & kLineFlagBlockGroundedMonsters)) &&
              (move_check.extended_flags & kExtendedFlagMonster) &&
-             (AlmostEquals(move_check.mover->z, move_check.mover->floor_z_))) ||
+             (epi::AlmostEquals(move_check.mover->z, move_check.mover->floor_z_))) ||
             (((ld->special && (ld->special->line_effect_ & kLineEffectTypeBlockPlayers)) ||
               (ld->flags & kLineFlagBlockPlayers)) &&
              (move_check.mover->player_)))
@@ -513,7 +513,7 @@ static bool CheckRelativeLineCallback(Line *ld, void *data)
     }
 
     // -AJA- for players, disable stepping up onto a lowering sector
-    if (move_check.mover->player_ && !AlmostEquals(ld->front_sector->floor_height, ld->back_sector->floor_height))
+    if (move_check.mover->player_ && !epi::AlmostEquals(ld->front_sector->floor_height, ld->back_sector->floor_height))
     {
         if ((move_check.mover->z < ld->front_sector->floor_height && SectorIsLowering(ld->front_sector)) ||
             (move_check.mover->z < ld->back_sector->floor_height && SectorIsLowering(ld->back_sector)))
@@ -561,13 +561,13 @@ static bool CheckRelativeLineCallback(Line *ld, void *data)
         f2 = ld->back_sector->floor_height;
         c2 = ld->back_sector->ceiling_height;
 
-        if (!AlmostEquals(c1, c2) && EDGE_IMAGE_IS_SKY(ld->front_sector->ceiling) &&
+        if (!epi::AlmostEquals(c1, c2) && EDGE_IMAGE_IS_SKY(ld->front_sector->ceiling) &&
             EDGE_IMAGE_IS_SKY(ld->back_sector->ceiling) && move_check.z > HMM_MIN(c1, c2))
         {
             map_object_hit_sky = true;
         }
 
-        if (!AlmostEquals(f1, f2) && EDGE_IMAGE_IS_SKY(ld->front_sector->floor) &&
+        if (!epi::AlmostEquals(f1, f2) && EDGE_IMAGE_IS_SKY(ld->front_sector->floor) &&
             EDGE_IMAGE_IS_SKY(ld->back_sector->floor) && move_check.z + move_check.mover->height_ < HMM_MAX(f1, f2))
         {
             map_object_hit_sky = true;
@@ -1203,7 +1203,7 @@ bool TryMove(MapObject *thing, float x, float y)
         
     // -AJA- 1999/07/31: Ride that rawhide :->
     if (thing->above_object_ && !(thing->above_object_->flags_ & kMapObjectFlagFloat) &&
-        AlmostEquals(thing->above_object_->z, thing->z + thing->height_))
+        epi::AlmostEquals(thing->above_object_->z, thing->z + thing->height_))
     {
         ChangeThingPosition(thing->above_object_, thing->above_object_->x + ((x - oldx) * thing->info_->ride_friction_), thing->above_object_->y + ((y - oldy) * thing->info_->ride_friction_), thing->above_object_->z);
     }
@@ -1259,7 +1259,7 @@ bool TryMove(MapObject *thing, float x, float y)
 //
 static bool ThingHeightClip(MapObject *thing)
 {
-    bool onfloor = AlmostEquals(thing->z, thing->floor_z_);
+    bool onfloor = epi::AlmostEquals(thing->z, thing->floor_z_);
 
     CheckRelativePosition(thing, thing->x, thing->y);
 
@@ -1450,7 +1450,7 @@ void SlideMove(MapObject *mo, float x, float y)
         PathTraverse(leadx, traily, leadx + dx, traily + dy, kPathAddLines, PTR_SlideTraverse);
 
         // move up to the wall
-        if (AlmostEquals(best_slide_along, 1.0001f))
+        if (epi::AlmostEquals(best_slide_along, 1.0001f))
         {
             // the move must have hit the middle, so stairstep
             break; // goto stairstep
@@ -1520,7 +1520,7 @@ static bool PTR_AimTraverse(PathIntercept *in, void *dataptr)
         //
         // -AJA- 1999/07/19: Gaps are now kept in line_t.
 
-        if (!AlmostEquals(ld->front_sector->floor_height, ld->back_sector->floor_height))
+        if (!epi::AlmostEquals(ld->front_sector->floor_height, ld->back_sector->floor_height))
         {
             float maxfloor = HMM_MAX(ld->front_sector->floor_height, ld->back_sector->floor_height);
             float slope    = (maxfloor - aim_check.start_z) / dist;
@@ -1529,7 +1529,7 @@ static bool PTR_AimTraverse(PathIntercept *in, void *dataptr)
                 aim_check.bottom_slope = slope;
         }
 
-        if (!AlmostEquals(ld->front_sector->ceiling_height, ld->back_sector->ceiling_height))
+        if (!epi::AlmostEquals(ld->front_sector->ceiling_height, ld->back_sector->ceiling_height))
         {
             float minceil = HMM_MIN(ld->front_sector->ceiling_height, ld->back_sector->ceiling_height);
             float slope   = (minceil - aim_check.start_z) / dist;
@@ -1613,7 +1613,7 @@ static bool PTR_AimTraverse2(PathIntercept *in, void *dataptr)
         //
         // -AJA- 1999/07/19: Gaps are now kept in line_t.
 
-        if (!AlmostEquals(ld->front_sector->floor_height, ld->back_sector->floor_height))
+        if (!epi::AlmostEquals(ld->front_sector->floor_height, ld->back_sector->floor_height))
         {
             float maxfloor = HMM_MAX(ld->front_sector->floor_height, ld->back_sector->floor_height);
             float slope    = (maxfloor - aim_check.start_z) / dist;
@@ -1622,7 +1622,7 @@ static bool PTR_AimTraverse2(PathIntercept *in, void *dataptr)
                 aim_check.bottom_slope = slope;
         }
 
-        if (!AlmostEquals(ld->front_sector->ceiling_height, ld->back_sector->ceiling_height))
+        if (!epi::AlmostEquals(ld->front_sector->ceiling_height, ld->back_sector->ceiling_height))
         {
             float minceil = HMM_MIN(ld->front_sector->ceiling_height, ld->back_sector->ceiling_height);
             float slope   = (minceil - aim_check.start_z) / dist;
@@ -1693,7 +1693,7 @@ static inline bool ShootCheckGap(float sx, float sy, float z, float floor_height
     /* Returns true if successfully passed gap */
 
     // perfectly horizontal shots cannot hit planes
-    if (AlmostEquals(shoot_check.slope, 0.0f) &&
+    if (epi::AlmostEquals(shoot_check.slope, 0.0f) &&
         (!sec_check || (!sec_check->floor_vertex_slope && !sec_check->ceiling_vertex_slope)))
         return true;
 
@@ -1706,21 +1706,21 @@ static inline bool ShootCheckGap(float sx, float sy, float z, float floor_height
             HMM_Vec3 tri_v2 = {{0, 0, 0}};
             for (auto v : sec_check->floor_z_vertices)
             {
-                if (AlmostEquals(ld->vertex_1->X, v.X) && AlmostEquals(ld->vertex_1->Y, v.Y))
+                if (epi::AlmostEquals(ld->vertex_1->X, v.X) && epi::AlmostEquals(ld->vertex_1->Y, v.Y))
                 {
                     tri_v1.X = v.X;
                     tri_v1.Y = v.Y;
                     tri_v1.Z = v.Z;
                 }
-                else if (AlmostEquals(ld->vertex_2->X, v.X) && AlmostEquals(ld->vertex_2->Y, v.Y))
+                else if (epi::AlmostEquals(ld->vertex_2->X, v.X) && epi::AlmostEquals(ld->vertex_2->Y, v.Y))
                 {
                     tri_v2.X = v.X;
                     tri_v2.Y = v.Y;
                     tri_v2.Z = v.Z;
                 }
             }
-            if (AlmostEquals(tri_v1.Z, tri_v2.Z) &&
-                AlmostEquals(HMM_Clamp(HMM_MIN(sec_check->floor_height, tri_v1.Z), z,
+            if (epi::AlmostEquals(tri_v1.Z, tri_v2.Z) &&
+                epi::AlmostEquals(HMM_Clamp(HMM_MIN(sec_check->floor_height, tri_v1.Z), z,
                                        HMM_MAX(sec_check->floor_height, tri_v1.Z)),
                              z)) // Hitting rectangular side; no fancier check needed
             {
@@ -1777,21 +1777,21 @@ static inline bool ShootCheckGap(float sx, float sy, float z, float floor_height
             HMM_Vec3 tri_v2 = {{0, 0, 0}};
             for (auto v : sec_check->ceiling_z_vertices)
             {
-                if (AlmostEquals(ld->vertex_1->X, v.X) && AlmostEquals(ld->vertex_1->Y, v.Y))
+                if (epi::AlmostEquals(ld->vertex_1->X, v.X) && epi::AlmostEquals(ld->vertex_1->Y, v.Y))
                 {
                     tri_v1.X = v.X;
                     tri_v1.Y = v.Y;
                     tri_v1.Z = v.Z;
                 }
-                else if (AlmostEquals(ld->vertex_2->X, v.X) && AlmostEquals(ld->vertex_2->Y, v.Y))
+                else if (epi::AlmostEquals(ld->vertex_2->X, v.X) && epi::AlmostEquals(ld->vertex_2->Y, v.Y))
                 {
                     tri_v2.X = v.X;
                     tri_v2.Y = v.Y;
                     tri_v2.Z = v.Z;
                 }
             }
-            if (AlmostEquals(tri_v1.Z, tri_v2.Z) &&
-                AlmostEquals(HMM_Clamp(HMM_MIN(sec_check->ceiling_height, tri_v1.Z), z,
+            if (epi::AlmostEquals(tri_v1.Z, tri_v2.Z) &&
+                epi::AlmostEquals(HMM_Clamp(HMM_MIN(sec_check->ceiling_height, tri_v1.Z), z,
                                        HMM_MAX(sec_check->ceiling_height, tri_v1.Z)),
                              z)) // Hitting rectangular side; no fancier check needed
             {
@@ -2932,7 +2932,7 @@ bool CheckSolidSectorMove(Sector *sec, bool is_ceiling, float dh)
 {
     Extrafloor *ef;
 
-    if (AlmostEquals(dh, 0.0f))
+    if (epi::AlmostEquals(dh, 0.0f))
         return true;
 
     //
@@ -3055,7 +3055,7 @@ bool SolidSectorMove(Sector *sec, bool is_ceiling, float dh, int crush, bool noc
 {
     Extrafloor *ef;
 
-    if (AlmostEquals(dh, 0.0f))
+    if (epi::AlmostEquals(dh, 0.0f))
         return false;
 
     no_fit       = false;

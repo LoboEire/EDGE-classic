@@ -25,7 +25,7 @@
 
 #include <algorithm>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "dm_defs.h"
 #include "dm_state.h"
 #include "epi.h"
@@ -341,12 +341,12 @@ static bool MovePlane(PlaneMover *plane)
     case kPlaneDirectionDown:
         if (plane->is_ceiling || plane->is_elevator)
         {
-            if (AlmostEquals(plane->start_height, sec->ceiling_height))
+            if (epi::AlmostEquals(plane->start_height, sec->ceiling_height))
                 maybe_instant = true;
         }
         if (!plane->is_ceiling)
         {
-            if (AlmostEquals(plane->start_height, sec->floor_height))
+            if (epi::AlmostEquals(plane->start_height, sec->floor_height))
                 maybe_instant = true;
         }
 
@@ -357,24 +357,24 @@ static bool MovePlane(PlaneMover *plane)
         {
             if (plane->is_ceiling || plane->is_elevator)
             {
-                if (AlmostEquals(plane->destination_height, sec->ceiling_height))
+                if (epi::AlmostEquals(plane->destination_height, sec->ceiling_height))
                     sec->old_ceiling_height = sec->ceiling_height;
             }
             if (!plane->is_ceiling)
             {
-                if (AlmostEquals(plane->destination_height, sec->floor_height))
+                if (epi::AlmostEquals(plane->destination_height, sec->floor_height))
                     sec->old_floor_height = sec->floor_height;
             }
         }
 
-        if (!AlmostEquals(plane->destination_height, plane->start_height))
+        if (!epi::AlmostEquals(plane->destination_height, plane->start_height))
         {
             MakeMovingSound(&plane->sound_effect_started, plane->type->sfxdown_, &sec->sound_effects_origin);
         }
 
         if (res == RES_PastDest)
         {
-            if (!AlmostEquals(plane->destination_height, plane->start_height))
+            if (!epi::AlmostEquals(plane->destination_height, plane->start_height))
             {
                 StartSoundEffect(plane->type->sfxstop_, kCategoryLevel, &sec->sound_effects_origin);
             }
@@ -398,7 +398,7 @@ static bool MovePlane(PlaneMover *plane)
                 break;
 
             case kPlaneMoverMoveWaitReturn:
-                if (AlmostEquals(HEIGHT(sec, plane->is_ceiling), plane->start_height))
+                if (epi::AlmostEquals(HEIGHT(sec, plane->is_ceiling), plane->start_height))
                 {
                     return true; // REMOVE ME
                 }
@@ -473,7 +473,7 @@ static bool MovePlane(PlaneMover *plane)
             int   dir;
             float dest;
 
-            if (AlmostEquals(HEIGHT(sec, plane->is_ceiling), plane->destination_height))
+            if (epi::AlmostEquals(HEIGHT(sec, plane->is_ceiling), plane->destination_height))
                 dest = plane->start_height;
             else
                 dest = plane->destination_height;
@@ -502,12 +502,12 @@ static bool MovePlane(PlaneMover *plane)
     case kPlaneDirectionUp:
         if (plane->is_ceiling || plane->is_elevator)
         {
-            if (AlmostEquals(plane->start_height, sec->ceiling_height))
+            if (epi::AlmostEquals(plane->start_height, sec->ceiling_height))
                 maybe_instant = true;
         }
         if (!plane->is_ceiling)
         {
-            if (AlmostEquals(plane->start_height, sec->floor_height))
+            if (epi::AlmostEquals(plane->start_height, sec->floor_height))
                 maybe_instant = true;
         }
 
@@ -518,24 +518,24 @@ static bool MovePlane(PlaneMover *plane)
         {
             if (plane->is_ceiling || plane->is_elevator)
             {
-                if (AlmostEquals(plane->destination_height, sec->ceiling_height))
+                if (epi::AlmostEquals(plane->destination_height, sec->ceiling_height))
                     sec->old_ceiling_height = sec->ceiling_height;
             }
             if (!plane->is_ceiling)
             {
-                if (AlmostEquals(plane->destination_height, sec->floor_height))
+                if (epi::AlmostEquals(plane->destination_height, sec->floor_height))
                     sec->old_floor_height = sec->floor_height;
             }
         }
 
-        if (!AlmostEquals(plane->destination_height, plane->start_height))
+        if (!epi::AlmostEquals(plane->destination_height, plane->start_height))
         {
             MakeMovingSound(&plane->sound_effect_started, plane->type->sfxup_, &sec->sound_effects_origin);
         }
 
         if (res == RES_PastDest)
         {
-            if (!AlmostEquals(plane->destination_height, plane->start_height))
+            if (!epi::AlmostEquals(plane->destination_height, plane->start_height))
             {
                 StartSoundEffect(plane->type->sfxstop_, kCategoryLevel, &sec->sound_effects_origin);
             }
@@ -557,7 +557,7 @@ static bool MovePlane(PlaneMover *plane)
                 break;
 
             case kPlaneMoverMoveWaitReturn:
-                if (AlmostEquals(HEIGHT(sec, plane->is_ceiling), plane->start_height))
+                if (epi::AlmostEquals(HEIGHT(sec, plane->is_ceiling), plane->start_height))
                 {
                     return true; // REMOVE ME
                 }
@@ -648,7 +648,7 @@ static Sector *P_GSS(Sector *sec, float dest, bool forc)
                 sector = GetLineSector(secnum, i, 1);
 
                 if (SECPIC(sector, forc, nullptr) != SECPIC(sec, forc, nullptr) &&
-                    AlmostEquals(HEIGHT(sector, forc), dest))
+                    epi::AlmostEquals(HEIGHT(sector, forc), dest))
                 {
                     return sector;
                 }
@@ -658,7 +658,7 @@ static Sector *P_GSS(Sector *sec, float dest, bool forc)
                 sector = GetLineSector(secnum, i, 0);
 
                 if (SECPIC(sector, forc, nullptr) != SECPIC(sec, forc, nullptr) &&
-                    AlmostEquals(HEIGHT(sector, forc), dest))
+                    epi::AlmostEquals(HEIGHT(sector, forc), dest))
                 {
                     return sector;
                 }
@@ -774,7 +774,7 @@ static PlaneMover *P_SetupSectorAction(Sector *sector, const PlaneMoverDefinitio
         plane->destination_height = dest;
         plane->start_height       = start;
     }
-    else if (!AlmostEquals(start, dest))
+    else if (!epi::AlmostEquals(start, dest))
     {
         P_SetupPlaneDirection(plane, def, start, dest);
     }
@@ -885,7 +885,7 @@ static PlaneMover *P_SetupSectorAction(Sector *sector, const PlaneMoverDefinitio
     // -ACB- 10/01/2001 Trigger starting sfx
     // UNNEEDED    sound::StopLoopingFX(&sector->sound_effects_origin);
 
-    if (def->sfxstart_ && !AlmostEquals(plane->destination_height, plane->start_height))
+    if (def->sfxstart_ && !epi::AlmostEquals(plane->destination_height, plane->start_height))
     {
         StartSoundEffect(def->sfxstart_, kCategoryLevel, &sector->sound_effects_origin);
     }

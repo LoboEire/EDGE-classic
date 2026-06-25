@@ -1,5 +1,5 @@
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "ddf_flat.h"
 #include "ddf_types.h"
 #include "dm_state.h"
@@ -195,7 +195,7 @@ static int PL_on_ground(lua_State *L)
     if (ui_player_who->map_object_->subsector_->sector->extrafloor_used == 0)
     {
         // on the edge above water/lava/etc? Handles edge walker case
-        if (!AlmostEquals(ui_player_who->map_object_->floor_z_,
+        if (!epi::AlmostEquals(ui_player_who->map_object_->floor_z_,
                           ui_player_who->map_object_->subsector_->sector->floor_height) &&
             !ui_player_who->map_object_->subsector_->sector->floor_vertex_slope)
             lua_pushboolean(L, 0);

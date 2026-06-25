@@ -27,7 +27,7 @@
 
 #include <string.h>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "bot_nav.h"
 #include "con_main.h"
 #include "dm_defs.h"
@@ -99,7 +99,7 @@ bool DeathBot::CanGetArmour(const Benefit *be, int extendedflags) const
     if (amount > slack)
         amount = slack;
 
-    return !(AlmostEquals(amount, 0.0f) && AlmostEquals(upgrade, 0.0f));
+    return !(epi::AlmostEquals(amount, 0.0f) && epi::AlmostEquals(upgrade, 0.0f));
 }
 
 bool DeathBot::MeleeWeapon() const
@@ -1075,7 +1075,7 @@ void DeathBot::FinishGetItem()
         return;
 
     // otherwise we were roaming about, so re-establish path
-    if (!(AlmostEquals(roam_goal_.x, 0.0f) && AlmostEquals(roam_goal_.y, 0.0f) && AlmostEquals(roam_goal_.z, 0.0f)))
+    if (!(epi::AlmostEquals(roam_goal_.x, 0.0f) && epi::AlmostEquals(roam_goal_.y, 0.0f) && epi::AlmostEquals(roam_goal_.z, 0.0f)))
     {
         path_ = BotFindPath(pl_->map_object_, &roam_goal_, 0);
 
