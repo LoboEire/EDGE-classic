@@ -187,7 +187,7 @@ set (EDGE_LINK_LIBRARIES
   ${SDL2_LIBRARIES}
   fluidlite
   HandmadeMath
-  lua
+  minilua
   miniaudio
   minivorbis
   miniz

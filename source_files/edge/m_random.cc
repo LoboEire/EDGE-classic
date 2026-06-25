@@ -151,5 +151,10 @@ void RandomStateWrite(uint64_t value)
     prns_set(&stateful_rng, value);
 }
 
+uint64_t RandomUnsigned(void)
+{
+    return prns_down_next(&stateless_rng);
+}
+
 //--- editor settings ---
 // vi:ts=4:sw=4:noexpandtab

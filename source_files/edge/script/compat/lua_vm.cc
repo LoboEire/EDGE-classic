@@ -6,6 +6,7 @@
 #include "epi_str_util.h"
 #include "i_system.h"
 #include "lua_compat.h"
+#include "m_random.h"
 #include "w_files.h"
 
 extern bool GetCOALDetected();
@@ -262,7 +263,7 @@ static void *LUA_DefaultAllocator(void *user, void *ptr, size_t osize, size_t ns
 
 lua_State *LuaCreateVM()
 {
-    lua_State *L = lua_newstate(LUA_DefaultAllocator, nullptr);
+    lua_State *L = lua_newstate(LUA_DefaultAllocator, nullptr, RandomUnsigned());
 
     /*
     ** these libs are loaded by lua.c and are readily available to any Lua

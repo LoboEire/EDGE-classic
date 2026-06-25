@@ -3,7 +3,7 @@
 #include "HandmadeMath.h"
 #include "con_var.h"
 #include "epi.h"
-#include "lua.hpp"
+#include "minilua.h"
 #include "p_mobj.h"
 
 lua_State *LuaCreateVM();
