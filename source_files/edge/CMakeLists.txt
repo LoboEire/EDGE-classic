@@ -192,7 +192,6 @@ set (EDGE_LINK_LIBRARIES
   minivorbis
   miniz
   pl_mpeg
-  prns
   stb
 )
 

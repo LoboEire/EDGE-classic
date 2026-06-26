@@ -27,18 +27,17 @@
 
 #include <stdint.h>
 
+#include "epi_math.h"
 #include "i_system.h"
-#define PRNS_SMALLCRUSH
-#include "prns.h"
 
-prns_t      stateful_rng;
-prns_down_t stateless_rng;
+epi::RNG stateful_rng;
+epi::RNG stateless_rng;
 
 void InitRandomState(void)
 {
     srand(GetMicroseconds());
-    prns_set(&stateful_rng, rand());
-    prns_down_init(&stateless_rng, &stateful_rng);
+    stateful_rng.Init(rand());
+    stateless_rng.Init(rand());
 }
 
 //
@@ -52,7 +51,7 @@ void InitRandomState(void)
 //
 int RandomByte(void)
 {
-    return prns_down_next(&stateless_rng) % 256;
+    return stateless_rng.Next() % 256;
 }
 
 //
@@ -85,7 +84,7 @@ int RandomByteSkewToZero(void)
 //
 int RandomByteDeterministic(void)
 {
-    return prns_next(&stateful_rng) % 256;
+    return stateful_rng.Next() % 256;
 }
 
 //
@@ -95,7 +94,7 @@ int RandomByteDeterministic(void)
 //
 int RandomShort(void)
 {
-    return prns_down_next(&stateless_rng) % 65536;
+    return stateless_rng.Next() % 65536;
 }
 
 //
@@ -140,7 +139,7 @@ bool RandomByteTestDeterministic(float chance)
 //
 uint64_t RandomStateRead(void)
 {
-    return prns_tell(&stateful_rng);
+    return stateful_rng.Tell();
 }
 
 //
@@ -148,12 +147,12 @@ uint64_t RandomStateRead(void)
 //
 void RandomStateWrite(uint64_t value)
 {
-    prns_set(&stateful_rng, value);
+    stateful_rng.Set(value);
 }
 
 uint64_t RandomUnsigned(void)
 {
-    return prns_down_next(&stateless_rng);
+    return stateless_rng.Next();
 }
 
 //--- editor settings ---
