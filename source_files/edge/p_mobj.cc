@@ -977,6 +977,9 @@ static void P_XYMovement(MapObject *mo, const RegionProperties *props)
                         Line *ld = *iter;
 
                         ShootSpecialLine(ld, PointOnLineSide(mo->x, mo->y, ld), mo->source_);
+
+                        if (special_lines_hit.empty()) // This can happen if something teleports, which invalidates the iterator
+                            break;
                     }
                 }
 

@@ -288,6 +288,8 @@ bool DoMove(MapObject *actor, bool path)
                 if (ld == block_line)
                     block_used = true;
             }
+            if (special_lines_hit.empty()) // This can happen if something teleports, which invalidates the iterator
+                break;
         }
 
         return any_used && (RandomByteDeterministic() < 230 ? block_used : !block_used);
