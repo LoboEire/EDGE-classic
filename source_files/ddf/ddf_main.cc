@@ -2185,6 +2185,14 @@ static void DDFParseUnreadFile(size_t d)
         {
             LogPrint("Parsing %s from: %s\n", ddf_readers[d].lump_name, it.source.c_str());
 
+            bool old_strict = strict_errors;
+            bool converted_ddf = (epi::StringCompareMax("DEHACKED", it.source, 8) == 0);
+
+            if (converted_ddf) 
+            {
+                strict_errors = false;
+            }
+
             if (it.type == kDDFTypeRadScript)
             {
                 ReadRADScript(it.data, it.source);
@@ -2198,6 +2206,8 @@ static void DDFParseUnreadFile(size_t d)
 
             // can free the memory now
             it.data.clear();
+
+            if (converted_ddf) strict_errors = old_strict;
         }
     }
 }
