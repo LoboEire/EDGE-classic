@@ -234,9 +234,9 @@ static void AddImageToMap(ImageMap &map, const char *name, Image *image)
 //
 
 Image::Image()
-    : width_(0), height_(0), name_("_UNINIT_"), source_type_(kImageSourceDummy), source_palette_(-1), cache_()
+    : width_(0), height_(0), name_("_UNINIT_"), source_type_(kImageSourceDummy), source_graphic_{}, source_flat_{},
+      source_texture_{}, source_dummy_{}, source_user_{}, source_palette_(-1), cache_()
 {
-    EPI_CLEAR_MEMORY(&source_, ImageSource, 1);
     EPI_CLEAR_MEMORY(&animation_, ImageAnimation, 1);
 }
 
@@ -262,7 +262,11 @@ void StoreBlurredImage(const Image *image)
         img->blurred_version_->opacity_           = img->opacity_;
         img->blurred_version_->scale_x_           = img->scale_x_;
         img->blurred_version_->scale_y_           = img->scale_y_;
-        img->blurred_version_->source_            = img->source_;
+        img->blurred_version_->source_graphic_    = img->source_graphic_;
+        img->blurred_version_->source_flat_       = img->source_flat_;
+        img->blurred_version_->source_texture_    = img->source_texture_;
+        img->blurred_version_->source_dummy_      = img->source_dummy_;
+        img->blurred_version_->source_user_       = img->source_user_;
         img->blurred_version_->source_palette_    = img->source_palette_;
         img->blurred_version_->source_type_       = img->source_type_;
         img->blurred_version_->animation_.current = img->blurred_version_;
@@ -316,8 +320,8 @@ static Image *CreateDummyImage(const char *name, RGBAColor fg, RGBAColor bg)
     rim->source_type_    = kImageSourceDummy;
     rim->source_palette_ = -1;
 
-    rim->source_.dummy.fg = fg;
-    rim->source_.dummy.bg = bg;
+    rim->source_dummy_.fg = fg;
+    rim->source_dummy_.bg = bg;
 
     return rim;
 }
@@ -437,10 +441,10 @@ static Image *AddPackImageSmartInternal(const char *name, ImageSource type, cons
 
     rim->source_type_                  = type;
     int pn_len                         = strlen(packfile_name);
-    rim->source_.graphic.packfile_name = (char *)calloc(pn_len + 1, 1);
-    epi::CStringCopyMax(rim->source_.graphic.packfile_name, packfile_name, pn_len);
-    rim->source_.graphic.is_patch     = is_patch;
-    rim->source_.graphic.user_defined = false; // This should only get set to true with DDFIMAGE specified DOOM
+    rim->source_graphic_.packfile_name = (char *)calloc(pn_len + 1, 1);
+    epi::CStringCopyMax(rim->source_graphic_.packfile_name, packfile_name, pn_len);
+    rim->source_graphic_.is_patch     = is_patch;
+    rim->source_graphic_.user_defined = false; // This should only get set to true with DDFIMAGE specified DOOM
                                                // format images
     rim->source_palette_ = -1;
 
@@ -577,9 +581,9 @@ static Image *AddImage_SmartInternal(const char *name, ImageSource type, int lum
     }
 
     rim->source_type_                 = type;
-    rim->source_.graphic.lump         = lump;
-    rim->source_.graphic.is_patch     = is_patch;
-    rim->source_.graphic.user_defined = false; // This should only get set to true with DDFIMAGE specified DOOM
+    rim->source_graphic_.lump         = lump;
+    rim->source_graphic_.is_patch     = is_patch;
+    rim->source_graphic_.user_defined = false; // This should only get set to true with DDFIMAGE specified DOOM
                                                // format images
     rim->source_palette_ = GetPaletteForLump(lump);
 
@@ -614,7 +618,7 @@ static Image *AddImageTexture(const char *name, TextureDefinition *tdef)
         rim->scale_y_ = 8.0 / tdef->scale_y;
 
     rim->source_type_         = kImageSourceTexture;
-    rim->source_.texture.tdef = tdef;
+    rim->source_texture_.tdef = tdef;
     rim->source_palette_      = tdef->palette_lump;
 
     AddImageToMap(real_textures, name, rim);
@@ -663,7 +667,7 @@ static Image *AddImageFlat(const char *name, int lump)
     rim->name_ = name;
 
     rim->source_type_      = kImageSourceFlat;
-    rim->source_.flat.lump = lump;
+    rim->source_flat_.lump = lump;
     rim->source_palette_   = GetPaletteForLump(lump);
 
     FlatDefinition *current_flatdef = flatdefs.Find(rim->name_.c_str());
@@ -750,12 +754,12 @@ static Image *AddImage_DOOM(ImageDefinition *def, bool user_defined = false)
     rim->hsv_value_      = def->hsv_value_;
     rim->blur_sigma_     = def->blur_factor_;
 
-    rim->source_.graphic.special = kImageSpecialNone;
+    rim->source_graphic_.special = kImageSpecialNone;
 
     if (user_defined)
     {
-        rim->source_.graphic.user_defined = true;
-        rim->source_.graphic.special      = def->special_;
+        rim->source_graphic_.user_defined = true;
+        rim->source_graphic_.special      = def->special_;
     }
 
     if (def->special_ & kImageSpecialCrosshair)
@@ -870,7 +874,7 @@ static Image *AddImageUser(ImageDefinition *def)
     rim->scale_y_ = def->scale_;
 
     rim->source_type_     = kImageSourceUser;
-    rim->source_.user.def = def;
+    rim->source_user_.def = def;
 
     rim->is_font_ = def->is_font_;
 
@@ -1091,7 +1095,7 @@ const Image **GetUserSprites(int *count)
         {
             const Image *rim = *it;
 
-            if (rim->source_type_ == kImageSourceUser || rim->source_.graphic.user_defined)
+            if (rim->source_type_ == kImageSourceUser || rim->source_graphic_.user_defined)
                 (*count) += 1;
         }
     }
@@ -1112,7 +1116,7 @@ const Image **GetUserSprites(int *count)
         {
             Image *rim = *it;
 
-            if (rim->source_type_ == kImageSourceUser || rim->source_.graphic.user_defined)
+            if (rim->source_type_ == kImageSourceUser || rim->source_graphic_.user_defined)
                 array[pos++] = rim;
         }
     }
@@ -1140,11 +1144,11 @@ static bool IM_ShouldClamp(const Image *rim)
         return true;
 
     case kImageSourceUser:
-        switch (rim->source_.user.def->belong_)
+        switch (rim->source_user_.def->belong_)
         {
         case kImageNamespaceGraphic:
         case kImageNamespaceSprite:
-            if (!(rim->source_.user.def->special_ & kImageSpecialRepeat))
+            if (!(rim->source_user_.def->special_ & kImageSpecialRepeat))
                 return true;
             return false;
         default:
@@ -1173,7 +1177,7 @@ static bool IM_ShouldMipmap(const Image *rim)
         return true;
 
     case kImageSourceUser:
-        switch (rim->source_.user.def->belong_)
+        switch (rim->source_user_.def->belong_)
         {
         case kImageNamespaceTexture:
         case kImageNamespaceFlat:
@@ -1255,41 +1259,41 @@ static GLuint LoadImageOGL(Image *rim, const Colormap *trans, bool do_whiten)
 
     if (rim->source_type_ == kImageSourceUser)
     {
-        if (rim->source_.user.def->special_ & kImageSpecialClamp)
+        if (rim->source_user_.def->special_ & kImageSpecialClamp)
             clamp = true;
 
-        if (rim->source_.user.def->special_ & kImageSpecialMip)
+        if (rim->source_user_.def->special_ & kImageSpecialMip)
             mip = true;
-        else if (rim->source_.user.def->special_ & kImageSpecialNoMip)
+        else if (rim->source_user_.def->special_ & kImageSpecialNoMip)
             mip = false;
 
-        if (rim->source_.user.def->special_ & kImageSpecialSmooth)
+        if (rim->source_user_.def->special_ & kImageSpecialSmooth)
             smooth = true;
-        else if (rim->source_.user.def->special_ & kImageSpecialNoSmooth)
+        else if (rim->source_user_.def->special_ & kImageSpecialNoSmooth)
             smooth = false;
 
-        flip = (rim->source_.user.def->special_ & kImageSpecialFlip);
+        flip = (rim->source_user_.def->special_ & kImageSpecialFlip);
 
-        invert = (rim->source_.user.def->special_ & kImageSpecialInvert);
+        invert = (rim->source_user_.def->special_ & kImageSpecialInvert);
     }
-    else if (rim->source_.graphic.user_defined)
+    else if (rim->source_graphic_.user_defined)
     {
-        if (rim->source_.graphic.special & kImageSpecialClamp)
+        if (rim->source_graphic_.special & kImageSpecialClamp)
             clamp = true;
 
-        if (rim->source_.graphic.special & kImageSpecialMip)
+        if (rim->source_graphic_.special & kImageSpecialMip)
             mip = true;
-        else if (rim->source_.graphic.special & kImageSpecialNoMip)
+        else if (rim->source_graphic_.special & kImageSpecialNoMip)
             mip = false;
 
-        if (rim->source_.graphic.special & kImageSpecialSmooth)
+        if (rim->source_graphic_.special & kImageSpecialSmooth)
             smooth = true;
-        else if (rim->source_.graphic.special & kImageSpecialNoSmooth)
+        else if (rim->source_graphic_.special & kImageSpecialNoSmooth)
             smooth = false;
 
-        flip = (rim->source_.graphic.special & kImageSpecialFlip);
+        flip = (rim->source_graphic_.special & kImageSpecialFlip);
 
-        invert = (rim->source_.graphic.special & kImageSpecialInvert);
+        invert = (rim->source_graphic_.special & kImageSpecialInvert);
     }
 
     const uint8_t *what_palette    = (const uint8_t *)&playpal_data[0];
@@ -1738,7 +1742,7 @@ void ImageMakeSaveString(const Image *image, char *type, char *namebuf)
     /* handle User images (convert to a more general type) */
     if (rim->source_type_ == kImageSourceUser)
     {
-        switch (rim->source_.user.def->belong_)
+        switch (rim->source_user_.def->belong_)
         {
         case kImageNamespaceTexture:
             (*type) = 'T';
@@ -2034,8 +2038,8 @@ void DeleteAllImages(bool shutdown)
         {
             for (Image *im : iter->second)
             {
-                if (im->source_.graphic.packfile_name)
-                    free(im->source_.graphic.packfile_name);
+                if (im->source_graphic_.packfile_name)
+                    free(im->source_graphic_.packfile_name);
                 if (im->blurred_version_)
                 {
                     for (CachedImage *cim : im->blurred_version_->cache_)
@@ -2055,8 +2059,8 @@ void DeleteAllImages(bool shutdown)
         {
             for (Image *im : iter->second)
             {
-                if (im->source_.graphic.packfile_name)
-                    free(im->source_.graphic.packfile_name);
+                if (im->source_graphic_.packfile_name)
+                    free(im->source_graphic_.packfile_name);
                 if (im->blurred_version_)
                 {
                     for (CachedImage *cim : im->blurred_version_->cache_)
@@ -2076,8 +2080,8 @@ void DeleteAllImages(bool shutdown)
         {
             for (Image *im : iter->second)
             {
-                if (im->source_.graphic.packfile_name)
-                    free(im->source_.graphic.packfile_name);
+                if (im->source_graphic_.packfile_name)
+                    free(im->source_graphic_.packfile_name);
                 if (im->blurred_version_)
                 {
                     for (CachedImage *cim : im->blurred_version_->cache_)
@@ -2097,8 +2101,8 @@ void DeleteAllImages(bool shutdown)
         {
             for (Image *im : iter->second)
             {
-                if (im->source_.graphic.packfile_name)
-                    free(im->source_.graphic.packfile_name);
+                if (im->source_graphic_.packfile_name)
+                    free(im->source_graphic_.packfile_name);
                 if (im->blurred_version_)
                 {
                     for (CachedImage *cim : im->blurred_version_->cache_)
@@ -2176,7 +2180,11 @@ void AnimateImageSet(const Image **images, int number, int speed)
             dupe_image->opacity_        = rim->opacity_;
             dupe_image->scale_x_        = rim->scale_x_;
             dupe_image->scale_y_        = rim->scale_y_;
-            dupe_image->source_         = rim->source_;
+            dupe_image->source_graphic_  = rim->source_graphic_;
+            dupe_image->source_flat_     = rim->source_flat_;
+            dupe_image->source_texture_  = rim->source_texture_;
+            dupe_image->source_dummy_    = rim->source_dummy_;
+            dupe_image->source_user_     = rim->source_user_;
             dupe_image->source_palette_ = rim->source_palette_;
             dupe_image->source_type_    = rim->source_type_;
             rim                         = dupe_image;
