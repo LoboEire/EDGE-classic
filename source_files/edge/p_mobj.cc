@@ -1508,7 +1508,18 @@ static void P_ZMovement(MapObject *mo, const RegionProperties *props)
     }
 
     // update the object's vertical region
-    TryMove(mo, mo->x, mo->y);
+    int did_move = TryMove(mo, mo->x, mo->y);
+
+    // test fix for missiles that damage a mobj and should explode,
+    // but simply continue on their way
+    if (!did_move)
+    {
+        if (mo->flags_ & kMapObjectFlagMissile)
+        {
+            ExplodeMissile(mo);
+            return;
+        }
+    }
 
     // apply drag -- but not to frictionless things
     if ((mo->extended_flags_ & kExtendedFlagNoFriction) || (mo->flags_ & kMapObjectFlagSkullFly))
