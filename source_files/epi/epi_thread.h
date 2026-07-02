@@ -5,18 +5,18 @@
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #  define EPI_THREAD_WIN32
-#elif defined(__EMSCRIPTEN__)
-#  ifndef __EMSCRIPTEN_PTHREADS__
-#    error "epi_thread.h requires -pthread when targeting Emscripten"
-#  endif
-#  define EPI_THREAD_POSIX
+#elif defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+#  define EPI_THREAD_NONE
 #else
 #  define EPI_THREAD_POSIX
 #endif
 
 #if defined(EPI_THREAD_WIN32)
 #include <windows.h>
-#else
+#if defined(_WIN32_WINNT) && _WIN32_WINNT >= 0x0600
+#define EPI_THREAD_WIN32_CONDVAR
+#endif
+#elif defined(EPI_THREAD_POSIX)
 #include <pthread.h>
 #include <time.h>
 #endif
@@ -28,10 +28,22 @@ typedef int (*ThreadFunc)(void *data);
 
 #if defined(EPI_THREAD_WIN32)
 
-typedef HANDLE             Thread;
-typedef CRITICAL_SECTION   Mutex;
+typedef HANDLE           Thread;
+typedef CRITICAL_SECTION Mutex;
+typedef volatile LONG    AtomicInt;
+
+#if defined(EPI_THREAD_WIN32_CONDVAR)
 typedef CONDITION_VARIABLE Cond;
-typedef volatile LONG      AtomicInt;
+#else
+struct Cond
+{
+    LONG   waiters_count;
+    Mutex  waiters_count_lock;
+    HANDLE sema;
+    HANDLE waiters_done;
+    int    was_broadcast;
+};
+#endif
 
 struct ThreadArg
 {
@@ -66,6 +78,8 @@ static inline void MutexDestroy(Mutex *m) { DeleteCriticalSection(m); }
 static inline void MutexLock(Mutex *m)    { EnterCriticalSection(m); }
 static inline void MutexUnlock(Mutex *m)  { LeaveCriticalSection(m); }
 
+#if defined(EPI_THREAD_WIN32_CONDVAR)
+
 static inline void CondInit(Cond *c)    { InitializeConditionVariable(c); }
 static inline void CondDestroy(Cond *c) { (void)c; }
 
@@ -81,6 +95,88 @@ static inline int32_t CondWaitTimeout(Cond *c, Mutex *m, int32_t timeout_ms)
 
 static inline void CondSignal(Cond *c)    { WakeConditionVariable(c); }
 static inline void CondBroadcast(Cond *c) { WakeAllConditionVariable(c); }
+
+#else
+
+static inline void CondInit(Cond *c)
+{
+    c->waiters_count = 0;
+    c->was_broadcast = 0;
+    c->sema          = CreateSemaphore(NULL, 0, 0x7fffffff, NULL);
+    c->waiters_done  = CreateEvent(NULL, FALSE, FALSE, NULL);
+    MutexInit(&c->waiters_count_lock);
+}
+
+static inline void CondDestroy(Cond *c)
+{
+    CloseHandle(c->sema);
+    CloseHandle(c->waiters_done);
+    MutexDestroy(&c->waiters_count_lock);
+}
+
+static inline int32_t CondWaitDeadline(Cond *c, Mutex *m, DWORD timeout_ms)
+{
+    MutexLock(&c->waiters_count_lock);
+    c->waiters_count++;
+    MutexUnlock(&c->waiters_count_lock);
+
+    MutexUnlock(m);
+    DWORD result = WaitForSingleObject(c->sema, timeout_ms);
+
+    MutexLock(&c->waiters_count_lock);
+    c->waiters_count--;
+    int32_t last_waiter = c->was_broadcast && c->waiters_count == 0;
+    MutexUnlock(&c->waiters_count_lock);
+
+    if (last_waiter)
+        SetEvent(c->waiters_done);
+
+    MutexLock(m);
+
+    return result == WAIT_OBJECT_0 ? 1 : 0;
+}
+
+static inline void CondWait(Cond *c, Mutex *m) { CondWaitDeadline(c, m, INFINITE); }
+
+static inline int32_t CondWaitTimeout(Cond *c, Mutex *m, int32_t timeout_ms)
+{
+    return CondWaitDeadline(c, m, (DWORD)timeout_ms);
+}
+
+static inline void CondSignal(Cond *c)
+{
+    MutexLock(&c->waiters_count_lock);
+    int32_t have_waiters = c->waiters_count > 0;
+    MutexUnlock(&c->waiters_count_lock);
+
+    if (have_waiters)
+        ReleaseSemaphore(c->sema, 1, NULL);
+}
+
+static inline void CondBroadcast(Cond *c)
+{
+    MutexLock(&c->waiters_count_lock);
+    int32_t have_waiters = 0;
+    if (c->waiters_count > 0)
+    {
+        c->was_broadcast = 1;
+        have_waiters     = 1;
+    }
+
+    if (have_waiters)
+    {
+        ReleaseSemaphore(c->sema, c->waiters_count, NULL);
+        MutexUnlock(&c->waiters_count_lock);
+        WaitForSingleObject(c->waiters_done, INFINITE);
+        c->was_broadcast = 0;
+    }
+    else
+    {
+        MutexUnlock(&c->waiters_count_lock);
+    }
+}
+
+#endif
 
 static inline int32_t AtomicLoad(AtomicInt *a)
 {
@@ -100,6 +196,63 @@ static inline int32_t AtomicAdd(AtomicInt *a, int32_t d)
 static inline int32_t AtomicCAS(AtomicInt *a, int32_t expected, int32_t desired)
 {
     return InterlockedCompareExchange(a, (LONG)desired, (LONG)expected) == (LONG)expected ? 1 : 0;
+}
+
+#elif defined(EPI_THREAD_NONE)
+
+typedef int     Thread;
+typedef int     Mutex;
+typedef int     Cond;
+typedef int32_t AtomicInt;
+
+static inline Thread ThreadCreate(ThreadFunc fn, void *data)
+{
+    fn(data);
+    return 0;
+}
+
+static inline void ThreadJoin(Thread t) { (void)t; }
+
+static inline void MutexInit(Mutex *m) { (void)m; }
+static inline void MutexDestroy(Mutex *m) { (void)m; }
+static inline void MutexLock(Mutex *m) { (void)m; }
+static inline void MutexUnlock(Mutex *m) { (void)m; }
+
+static inline void CondInit(Cond *c) { (void)c; }
+static inline void CondDestroy(Cond *c) { (void)c; }
+
+static inline void CondWait(Cond *c, Mutex *m) { (void)c; (void)m; }
+
+static inline int32_t CondWaitTimeout(Cond *c, Mutex *m, int32_t timeout_ms)
+{
+    (void)c;
+    (void)m;
+    (void)timeout_ms;
+    return 1;
+}
+
+static inline void CondSignal(Cond *c) { (void)c; }
+static inline void CondBroadcast(Cond *c) { (void)c; }
+
+static inline int32_t AtomicLoad(AtomicInt *a) { return *a; }
+
+static inline void AtomicStore(AtomicInt *a, int32_t v) { *a = v; }
+
+static inline int32_t AtomicAdd(AtomicInt *a, int32_t d)
+{
+    int32_t old = *a;
+    *a += d;
+    return old;
+}
+
+static inline int32_t AtomicCAS(AtomicInt *a, int32_t expected, int32_t desired)
+{
+    if (*a == expected)
+    {
+        *a = desired;
+        return 1;
+    }
+    return 0;
 }
 
 #else

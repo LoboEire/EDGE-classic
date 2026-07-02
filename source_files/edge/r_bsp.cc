@@ -57,7 +57,8 @@
 #include "r_units.h"
 
 #if defined(EDGE_SOKOL)
-#if !defined(EDGE_WEB) || defined(EDGE_WEB_MULTITHREADED)
+#include "epi_thread.h"
+#if !defined(EPI_THREAD_NONE)
 #define BSP_MULTITHREAD
 static void BSPQueueRenderBatch(RenderBatch *batch);
 #endif
@@ -68,7 +69,6 @@ static RenderBatch *current_batch = nullptr;
 #endif
 
 #ifdef BSP_MULTITHREAD
-#include "epi_thread.h"
 
 constexpr int32_t kMaxRenderBatch = 65536 / 4;
 

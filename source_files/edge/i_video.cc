@@ -34,10 +34,8 @@
 #include "r_state.h"
 #include "version.h"
 
-SDL_Window *program_window = NULL;
-#ifndef SOKOL_D3D11
+SDL_Window   *program_window  = NULL;
 SDL_GLContext program_context = NULL;
-#endif
 
 int graphics_shutdown = 0;
 
@@ -171,7 +169,6 @@ void StartupGraphics(void)
     if (FindArgument("nograb") > 0)
         grab_mouse = 0;
 
-#ifndef SOKOL_D3D11
     // -AJA- FIXME these are wrong (probably ignored though)
     SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 5);
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 5);
@@ -179,7 +176,6 @@ void StartupGraphics(void)
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 0);
-#endif
 
 #ifdef SOKOL_GLCORE
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -270,9 +266,7 @@ static bool InitializeWindow(DisplayMode *mode)
     uint32_t window_flags =
         (mode->window_mode == kWindowModeBorderless ? (SDL_WINDOW_FULLSCREEN_DESKTOP) : (0)) | resizeable;
 
-#ifndef SOKOL_D3D11
     window_flags |= SDL_WINDOW_OPENGL;
-#endif
 
     program_window = SDL_CreateWindow(temp_title.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, mode->width,
                                       mode->height, window_flags);
@@ -294,28 +288,22 @@ static bool InitializeWindow(DisplayMode *mode)
         toggle_windowed_window_mode = kWindowModeWindowed;
     }
 
-#ifndef SOKOL_D3D11
     program_context = SDL_GL_CreateContext(program_window);
     if (program_context == NULL)
         FatalError("Failed to create OpenGL context.\n");
-#endif
 
     if (vsync.d_ == 2)
     {
-#ifndef SOKOL_D3D11
         // Fallback to normal VSync if Adaptive doesn't work
         if (SDL_GL_SetSwapInterval(-1) == -1)
         {
             vsync = 1;
             SDL_GL_SetSwapInterval(vsync.d_);
         }
-#endif
     }
     else
     {
-#ifndef SOKOL_D3D11
         SDL_GL_SetSwapInterval(vsync.d_);
-#endif
     }
 
 #ifndef EDGE_SOKOL
@@ -389,9 +377,7 @@ bool SetScreenSize(DisplayMode *mode)
     render_state->Clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 #endif
 
-#ifndef SOKOL_D3D11
     SDL_GL_SwapWindow(program_window);
-#endif
 
     return true;
 }
@@ -417,10 +403,8 @@ static void SwapBuffers(void)
 
     render_backend->SwapBuffers();
 
-#ifndef SOKOL_D3D11
     // move me and other SDL_GL to backend
     SDL_GL_SwapWindow(program_window);
-#endif
 }
 
 void FinishFrame(void)
@@ -489,20 +473,16 @@ void FinishFrame(void)
     {
         if (vsync.d_ == 2)
         {
-#ifndef SOKOL_D3D11
             // Fallback to normal VSync if Adaptive doesn't work
             if (SDL_GL_SetSwapInterval(-1) == -1)
             {
                 vsync = 1;
                 SDL_GL_SetSwapInterval(vsync.d_);
             }
-#endif
         }
         else
         {
-#ifndef SOKOL_D3D11
             SDL_GL_SetSwapInterval(vsync.d_);
-#endif
         }
     }
 
@@ -521,13 +501,11 @@ void ShutdownGraphics(void)
 
     render_backend->Shutdown();
 
-#ifndef SOKOL_D3D11
     if (program_context != NULL)
     {
         SDL_GL_DeleteContext(program_context);
         program_context = NULL;
     }
-#endif
 
     if (program_window != NULL)
     {

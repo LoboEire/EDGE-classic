@@ -62,11 +62,6 @@ if (EMSCRIPTEN)
   include("${CMAKE_SOURCE_DIR}/cmake/Emscripten.cmake")  
 endif()
 
-# Set WIN32_WINNT to Windows 7 if using the new renderer
-if ((WIN32 OR MINGW) AND EDGE_SOKOL)
-  add_definitions(-D_WIN32_WINNT=0x601)
-endif()
-
 if(MSVC)
     # Use static C runtime, means matching C runtime doesn't need to be on users box
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:Debug>")   
