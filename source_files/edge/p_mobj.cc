@@ -1386,7 +1386,7 @@ static void P_ZMovement(MapObject *mo, const RegionProperties *props)
             //       is missed by CheckRelativeThingCallback).  FIXME: more
             //       kludge.
 
-            if (mo->below_object_ && AlmostEquals(mo->floor_z_, mo->below_object_->z + mo->below_object_->height_)
+            if (mo->below_object_ && epi::AlmostEquals(mo->floor_z_, mo->below_object_->z + mo->below_object_->height_)
                 && (mo->below_object_->flags_ & kMapObjectFlagShootable) && (mo->source_ != mo->below_object_))
             {
                 if (MissileContact(mo, mo->below_object_) < 0 || (mo->extended_flags_ & kExtendedFlagTunnel))
@@ -1472,7 +1472,7 @@ static void P_ZMovement(MapObject *mo, const RegionProperties *props)
 
         if ((mo->flags_ & kMapObjectFlagMissile) && !(mo->flags_ & kMapObjectFlagNoClip))
         {
-            if (mo->above_object_ && AlmostEquals(mo->ceiling_z_, mo->above_object_->z) &&
+            if (mo->above_object_ && epi::AlmostEquals(mo->ceiling_z_, mo->above_object_->z) &&
                 (mo->above_object_->flags_ & kMapObjectFlagShootable) && (mo->source_ != mo->above_object_))
             {
                 if (MissileContact(mo, mo->above_object_) < 0 || (mo->extended_flags_ & kExtendedFlagTunnel))
