@@ -23,7 +23,7 @@
 //
 //----------------------------------------------------------------------------
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "am_map.h"
 #include "con_main.h"
 #include "dm_defs.h"
@@ -433,7 +433,7 @@ static void GiveArmour(PickupInfo *pu, Benefit *be)
 
     if (pu->lose_them)
     {
-        if (AlmostEquals(pu->player->armours_[a_class], 0.0f))
+        if (epi::AlmostEquals(pu->player->armours_[a_class], 0.0f))
             return;
 
         pu->player->armours_[a_class] -= be->amount;
@@ -484,7 +484,7 @@ static void GiveArmour(PickupInfo *pu, Benefit *be)
         EPI_ASSERT(amount >= 0);
         EPI_ASSERT(upgrade >= 0);
 
-        if (AlmostEquals(amount, 0.0f) && AlmostEquals(upgrade, 0.0f))
+        if (epi::AlmostEquals(amount, 0.0f) && epi::AlmostEquals(upgrade, 0.0f))
             return;
     }
 
@@ -565,7 +565,7 @@ static void GivePower(PickupInfo *pu, Benefit *be)
 
     if (pu->lose_them)
     {
-        if (AlmostEquals(pu->player->powers_[be->sub.type], 0.0f))
+        if (epi::AlmostEquals(pu->player->powers_[be->sub.type], 0.0f))
             return;
 
         pu->player->powers_[be->sub.type] -= duration;
@@ -723,7 +723,7 @@ bool HasBenefitInList(Player *player, Benefit *list)
             break;
 
         case kBenefitTypePowerup:
-            if (!AlmostEquals(player->powers_[be->sub.type], 0.0f))
+            if (!epi::AlmostEquals(player->powers_[be->sub.type], 0.0f))
                 return true;
             break;
 
@@ -841,8 +841,8 @@ void TouchSpecialThing(MapObject *special, MapObject *toucher)
         return;
 
     // Do not pick up the item if completely still
-    if (AlmostEquals(toucher->momentum_.X, 0.0f) && AlmostEquals(toucher->momentum_.Y, 0.0f) &&
-        AlmostEquals(toucher->momentum_.Z, 0.0f))
+    if (epi::AlmostEquals(toucher->momentum_.X, 0.0f) && epi::AlmostEquals(toucher->momentum_.Y, 0.0f) &&
+        epi::AlmostEquals(toucher->momentum_.Z, 0.0f))
         return;
 
     // -KM- 1998/09/27 Sounds.ddf
@@ -1247,7 +1247,7 @@ void ThrustMapObject(MapObject *target, MapObject *inflictor, float thrust)
     BAMAngle angle = PointToAngle(0, 0, dx, dy);
 
     // -ACB- 2000/03/11 Div-by-zero check...
-    EPI_ASSERT(!AlmostEquals(target->info_->mass_, 0.0f));
+    EPI_ASSERT(!epi::AlmostEquals(target->info_->mass_, 0.0f));
 
     float push = 12.0f * thrust / target->info_->mass_;
 
@@ -1304,7 +1304,7 @@ void PushMapObject(MapObject *target, MapObject *inflictor, float thrust)
     BAMAngle angle = PointToAngle(0, 0, dx, dy);
 
     // -ACB- 2000/03/11 Div-by-zero check...
-    EPI_ASSERT(!AlmostEquals(target->info_->mass_, 0.0f));
+    EPI_ASSERT(!epi::AlmostEquals(target->info_->mass_, 0.0f));
 
     float push = 12.0f * thrust / target->info_->mass_;
 

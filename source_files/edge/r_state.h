@@ -31,7 +31,7 @@
 
 // Need data structure definitions.
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "i_defs_gl.h"
 #include "i_system.h"
 #include "m_math.h"

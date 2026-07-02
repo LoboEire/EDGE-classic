@@ -26,7 +26,7 @@
 #include <float.h>
 #include <math.h>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "bot_think.h"
 #include "coal.h"
 #include "ddf_colormap.h"
@@ -109,9 +109,9 @@ static void CalcHeight(Player *player)
         sink_mult -= cur_sec->sink_depth;
 
     if (erraticism.d_ && level_time_elapsed > 0 && (!player->command_.forward_move && !player->command_.side_move) &&
-        ((AlmostEquals(player->map_object_->height_, player->map_object_->info_->height_) ||
-          AlmostEquals(player->map_object_->height_, player->map_object_->info_->crouchheight_)) &&
-         (AlmostEquals(player->delta_view_height_, 0.0f) || sink_mult < 1.0f)))
+        ((epi::AlmostEquals(player->map_object_->height_, player->map_object_->info_->height_) ||
+          epi::AlmostEquals(player->map_object_->height_, player->map_object_->info_->crouchheight_)) &&
+         (epi::AlmostEquals(player->delta_view_height_, 0.0f) || sink_mult < 1.0f)))
         return;
 
     if (player->map_object_->height_ <
@@ -181,7 +181,7 @@ static void CalcHeight(Player *player)
             }
         }
 
-        if (!AlmostEquals(player->delta_view_height_, 0.0f))
+        if (!epi::AlmostEquals(player->delta_view_height_, 0.0f))
         {
             // use a weird number to minimise chance of hitting
             // zero when delta_view_height_ goes neg -> positive.
@@ -199,7 +199,7 @@ static void CalcHeight(Player *player)
     {
         if ((player->map_object_->momentum_.Z <= -35.0) && (player->map_object_->momentum_.Z >= -36.0))
         {
-            if (!AlmostEquals(player->map_object_->floor_z_, -32768.0f))
+            if (!epi::AlmostEquals(player->map_object_->floor_z_, -32768.0f))
             {
                 int sfx_cat;
 
@@ -396,7 +396,7 @@ static void MovePlayer(Player *player)
             }
         }
 
-        if (fric < 0.0f || AlmostEquals(fric, kFrictionDefault))
+        if (fric < 0.0f || epi::AlmostEquals(fric, kFrictionDefault))
             fric = kFrictionDefault;
         else if (fric > kFrictionDefault)
             fric *= factor;
@@ -851,9 +851,9 @@ bool PlayerThink(Player *player)
               (kButtonCodeAttack | kButtonCodeUse | kButtonCodeChangeWeapon | kExtendedButtonCodeSecondAttack |
                kExtendedButtonCodeReload | kExtendedButtonCodeAction1 | kExtendedButtonCodeAction2 |
                kExtendedButtonCodeInventoryUse | kExtendedButtonCodeThirdAttack | kExtendedButtonCodeFourthAttack)) &&
-            ((AlmostEquals(player->map_object_->height_, player->map_object_->info_->height_) ||
-              AlmostEquals(player->map_object_->height_, player->map_object_->info_->crouchheight_)) &&
-             (AlmostEquals(player->delta_view_height_, 0.0f) || sinking)))
+            ((epi::AlmostEquals(player->map_object_->height_, player->map_object_->info_->height_) ||
+              epi::AlmostEquals(player->map_object_->height_, player->map_object_->info_->crouchheight_)) &&
+             (epi::AlmostEquals(player->delta_view_height_, 0.0f) || sinking)))
         {
             should_think = false;
             if (!player->map_object_->momentum_.Z)

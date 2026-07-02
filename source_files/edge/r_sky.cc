@@ -459,7 +459,7 @@ static void RenderSkyCylinder(void)
         // Dasho - Dividing by the image height seems to work for scrolling skies, but not skies with static
         // offsets. I've tested with a few WADs (Eviternity, PD2, Toilet Doom) and things seem to be right.
         // The entire sky code needs to be rewritten anyway.
-        if (!AlmostEquals(sky_ref->old_offset.Y, sky_ref->offset.Y))
+        if (!epi::AlmostEquals(sky_ref->old_offset.Y, sky_ref->offset.Y))
         {
             if (!console_active && !paused && !menu_active && !time_stop_active && !erraticism_active)
             {
@@ -481,14 +481,14 @@ static void RenderSkyCylinder(void)
             ddf_sky_scroll.Y += current_map->sky_scroll_y_;
             ddf_scroll_tic = game_tic;
         }
-        if (!AlmostEquals(current_map->sky_scroll_x_, 0.0f))
+        if (!epi::AlmostEquals(current_map->sky_scroll_x_, 0.0f))
         {
             if (!console_active && !paused && !menu_active && !time_stop_active && !erraticism_active)
                 offx = HMM_Lerp(ddf_old_sky_scroll.X, fractional_tic, ddf_sky_scroll.X);
             else
                 offx = ddf_sky_scroll.X;
         }
-        if (!AlmostEquals(current_map->sky_scroll_y_, 0.0f))
+        if (!epi::AlmostEquals(current_map->sky_scroll_y_, 0.0f))
         {
             if (!console_active && !paused && !menu_active && !time_stop_active && !erraticism_active)
                 offy = HMM_Lerp(ddf_old_sky_scroll.Y, fractional_tic, ddf_sky_scroll.Y);

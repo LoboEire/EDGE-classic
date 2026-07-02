@@ -34,7 +34,7 @@
 
 #include <vector>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "c_local.h"
 #include "epi.h"
 #include "stb_sprintf.h"
@@ -650,14 +650,14 @@ Definition *RealVM::FindLiteral()
         }
         else if (comp_.literal_type == &type_float)
         {
-            if (AlmostEquals(COAL_G_FLOAT(cn->ofs), comp_.literal_value[0]))
+            if (epi::AlmostEquals(COAL_G_FLOAT(cn->ofs), comp_.literal_value[0]))
                 return cn;
         }
         else if (comp_.literal_type == &type_vector)
         {
-            if (AlmostEquals(COAL_G_FLOAT(cn->ofs), comp_.literal_value[0]) &&
-                AlmostEquals(COAL_G_FLOAT(cn->ofs + 1), comp_.literal_value[1]) &&
-                AlmostEquals(COAL_G_FLOAT(cn->ofs + 2), comp_.literal_value[2]))
+            if (epi::AlmostEquals(COAL_G_FLOAT(cn->ofs), comp_.literal_value[0]) &&
+                epi::AlmostEquals(COAL_G_FLOAT(cn->ofs + 1), comp_.literal_value[1]) &&
+                epi::AlmostEquals(COAL_G_FLOAT(cn->ofs + 2), comp_.literal_value[2]))
             {
                 return cn;
             }

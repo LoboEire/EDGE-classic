@@ -2409,10 +2409,10 @@ static void setEnvelopePos(stmTyp *ch, uint8_t param)
                         break;
                     }
 
-                    ch->envVIPValue = ((ins->envVP[envPos + 1][1] - ins->envVP[envPos][1]) & 0xFF) << 8;
-                    ch->envVIPValue /= (ins->envVP[envPos + 1][0] - ins->envVP[envPos][0]);
+                    const int8_t yVDiff = (int8_t)(ins->envVP[envPos + 1][1] - ins->envVP[envPos][1]);
+                    ch->envVIPValue     = (yVDiff << 8) / (ins->envVP[envPos + 1][0] - ins->envVP[envPos][0]);
 
-                    ch->envVAmp = (ch->envVIPValue * (newEnvPos - 1)) + ((ins->envVP[envPos][1] & 0xFF) << 8);
+                    ch->envVAmp = ((int8_t)ins->envVP[envPos][1] << 8) + (int16_t)(ch->envVIPValue * (newEnvPos - 1));
 
                     envPos++;
 
@@ -2474,10 +2474,10 @@ static void setEnvelopePos(stmTyp *ch, uint8_t param)
                         break;
                     }
 
-                    ch->envPIPValue = ((ins->envPP[envPos + 1][1] - ins->envPP[envPos][1]) & 0xFF) << 8;
-                    ch->envPIPValue /= (ins->envPP[envPos + 1][0] - ins->envPP[envPos][0]);
+                    const int8_t yPDiff = (int8_t)(ins->envPP[envPos + 1][1] - ins->envPP[envPos][1]);
+                    ch->envPIPValue     = (yPDiff << 8) / (ins->envPP[envPos + 1][0] - ins->envPP[envPos][0]);
 
-                    ch->envPAmp = (ch->envPIPValue * (newEnvPos - 1)) + ((ins->envPP[envPos][1] & 0xFF) << 8);
+                    ch->envPAmp = ((int8_t)ins->envPP[envPos][1] << 8) + (int16_t)(ch->envPIPValue * (newEnvPos - 1));
 
                     envPos++;
 
@@ -3043,9 +3043,10 @@ static void fixaEnvelopeVibrato(stmTyp *ch)
                 ch->envVAmp += ch->envVIPValue;
 
                 envVal = ch->envVAmp;
-                if (envVal > 64 * 256)
+                uint8_t envVHiByte = (uint8_t)(envVal >> 8);
+                if (envVHiByte > 64)
                 {
-                    if (envVal > 128 * 256)
+                    if (envVHiByte <= 160) // 8bb: FT2 tests the upper byte here (unsigned test!); 160 unsigned = -64 signed
                         envVal = 64 * 256;
                     else
                         envVal = 0;
@@ -3144,9 +3145,10 @@ static void fixaEnvelopeVibrato(stmTyp *ch)
             ch->envPAmp += ch->envPIPValue;
 
             envVal = ch->envPAmp;
-            if (envVal > 64 * 256)
+            uint8_t envPHiByte = (uint8_t)(envVal >> 8);
+            if (envPHiByte > 64)
             {
-                if (envVal > 128 * 256)
+                if (envPHiByte <= 160) // 8bb: FT2 tests the upper byte here (unsigned test!); 160 unsigned = -64 signed
                     envVal = 64 * 256;
                 else
                     envVal = 0;

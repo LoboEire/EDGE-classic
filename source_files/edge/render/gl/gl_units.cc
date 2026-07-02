@@ -23,7 +23,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "dm_state.h"
 #include "e_player.h"
 #include "epi.h"
@@ -345,12 +345,12 @@ void RenderCurrentUnits(void)
                 state->ClearColor(active_fog_rgb);
                 state->FogColor(active_fog_rgb);
             }
-            if (!AlmostEquals(unit->fog_density, active_fog_density))
+            if (!epi::AlmostEquals(unit->fog_density, active_fog_density))
             {
                 active_fog_density = unit->fog_density;
                 state->FogDensity(std::log1p(active_fog_density));
             }
-            if (!AlmostEquals(active_fog_density, 0.0f))
+            if (!epi::AlmostEquals(active_fog_density, 0.0f))
                 state->Enable(GL_FOG);
             else
                 state->Disable(GL_FOG);

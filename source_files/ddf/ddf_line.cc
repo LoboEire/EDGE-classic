@@ -34,7 +34,7 @@
 #include <limits.h>
 #include <string.h>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "ddf_local.h"
 #include "epi_str_util.h"
 
@@ -390,7 +390,7 @@ static void LinedefFinishEntry(void)
         }
     }
 
-    if (!AlmostEquals(dynamic_line->friction_, kFloatUnused) && dynamic_line->friction_ < 0.05f)
+    if (!epi::AlmostEquals(dynamic_line->friction_, kFloatUnused) && dynamic_line->friction_ < 0.05f)
     {
         DDFWarnError("Friction value too low (%1.2f), it would prevent "
                      "all movement.\n",
@@ -398,7 +398,7 @@ static void LinedefFinishEntry(void)
         dynamic_line->friction_ = 0.05f;
     }
 
-    if (!AlmostEquals(dynamic_line->viscosity_, kFloatUnused) && dynamic_line->viscosity_ > 0.95f)
+    if (!epi::AlmostEquals(dynamic_line->viscosity_, kFloatUnused) && dynamic_line->viscosity_ > 0.95f)
     {
         DDFWarnError("Viscosity value too high (%1.2f), it would prevent "
                      "all movement.\n",

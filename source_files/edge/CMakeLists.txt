@@ -185,15 +185,13 @@ set (EDGE_LINK_LIBRARIES
   ddf
   epi
   ${SDL2_LIBRARIES}
-  almostequals
   fluidlite
   HandmadeMath
-  lua
+  minilua
   miniaudio
   minivorbis
   miniz
   pl_mpeg
-  prns
   stb
 )
 

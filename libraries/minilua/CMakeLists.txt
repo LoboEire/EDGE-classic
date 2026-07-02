@@ -1,7 +1,7 @@
 ##########################################
-# pl_mpeg
+# minilua
 ##########################################
 
-add_library(pl_mpeg pl_mpeg.c)
+add_library(minilua minilua.c)
 
-target_include_directories(pl_mpeg PUBLIC ./)
+target_include_directories(minilua PUBLIC ./)

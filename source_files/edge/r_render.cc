@@ -30,7 +30,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "dm_defs.h"
 #include "dm_state.h"
 #include "epi.h"
@@ -547,9 +547,9 @@ static void DrawWallPart(DrawFloor *dfloor, float x1, float y1, float lz1, float
     if ((current_map->episode_->lighting_ == kLightingModelDoom || default_lighting.d_ == kLightingModelDoom) &&
         props->light_level > 0)
     {
-        if (AlmostEquals(current_seg->vertex_1->Y, current_seg->vertex_2->Y))
+        if (epi::AlmostEquals(current_seg->vertex_1->Y, current_seg->vertex_2->Y))
             lit_adjust -= 16;
-        else if (AlmostEquals(current_seg->vertex_1->X, current_seg->vertex_2->X))
+        else if (epi::AlmostEquals(current_seg->vertex_1->X, current_seg->vertex_2->X))
             lit_adjust += 16;
     }
 
@@ -620,7 +620,7 @@ static void DrawWallPart(DrawFloor *dfloor, float x1, float y1, float lz1, float
 
     // -AJA- 2006-06-22: fix for midmask wrapping bug
     if (mid_masked &&
-        (!current_seg->linedef->special || AlmostEquals(current_seg->linedef->special->s_yspeed_,
+        (!current_seg->linedef->special || epi::AlmostEquals(current_seg->linedef->special->s_yspeed_,
                                                         0.0f))) // Allow vertical scroller midmasks - Dasho
         blending = (BlendingMode)(blending | kBlendingClampY);
 
@@ -874,12 +874,12 @@ static void DrawTile(Seg *seg, DrawFloor *dfloor, float lz1, float lz2, float rz
 
     float offx, offy;
 
-    if (!AlmostEquals(surf->old_offset.X, surf->offset.X) && !console_active && !paused && !menu_active &&
+    if (!epi::AlmostEquals(surf->old_offset.X, surf->offset.X) && !console_active && !paused && !menu_active &&
         !time_stop_active && !erraticism_active)
         offx = fmod(HMM_Lerp(surf->old_offset.X, fractional_tic, surf->offset.X), surf->image->width_);
     else
         offx = surf->offset.X;
-    if (!AlmostEquals(surf->old_offset.Y, surf->offset.Y) && !console_active && !paused && !menu_active &&
+    if (!epi::AlmostEquals(surf->old_offset.Y, surf->offset.Y) && !console_active && !paused && !menu_active &&
         !time_stop_active && !erraticism_active)
         offy = fmod(HMM_Lerp(surf->old_offset.Y, fractional_tic, surf->offset.Y), surf->image->height_);
     else
@@ -1670,12 +1670,12 @@ static void RenderPlane(DrawFloor *dfloor, float h, MapSurface *surf, int face_d
     data.v_count  = v_count;
     data.vertices = vertices;
     data.R = data.G = data.B = 255;
-    if (!AlmostEquals(surf->old_offset.X, surf->offset.X) && !console_active && !paused && !menu_active &&
+    if (!epi::AlmostEquals(surf->old_offset.X, surf->offset.X) && !console_active && !paused && !menu_active &&
         !time_stop_active && !erraticism_active)
         data.tx0 = fmod(HMM_Lerp(surf->old_offset.X, fractional_tic, surf->offset.X), surf->image->width_);
     else
         data.tx0 = surf->offset.X;
-    if (!AlmostEquals(surf->old_offset.Y, surf->offset.Y) && !console_active && !paused && !menu_active &&
+    if (!epi::AlmostEquals(surf->old_offset.Y, surf->offset.Y) && !console_active && !paused && !menu_active &&
         !time_stop_active && !erraticism_active)
         data.ty0 = fmod(HMM_Lerp(surf->old_offset.Y, fractional_tic, surf->offset.Y), surf->image->height_);
     else
@@ -1836,7 +1836,7 @@ static void InitializeCamera(MapObject *mo, bool full_height, float expand_w)
     else
         view_y_slope = kDoomYSlope;
 
-    if (!AlmostEquals(fov, 90.0f))
+    if (!epi::AlmostEquals(fov, 90.0f))
     {
         float new_slope = tan(fov * HMM_PI / 360.0);
 
@@ -2002,12 +2002,12 @@ void UpdateSectorInterpolation(Sector *sector)
     if (!time_stop_active && !console_active && !paused && !erraticism_active && !menu_active && !rts_menu_active)
     {
         // Interpolate between current and last floor/ceiling position.
-        if (!AlmostEquals(sector->floor_height, sector->old_floor_height))
+        if (!epi::AlmostEquals(sector->floor_height, sector->old_floor_height))
             sector->interpolated_floor_height =
                 HMM_Lerp(sector->old_floor_height, fractional_tic, sector->floor_height);
         else
             sector->interpolated_floor_height = sector->floor_height;
-        if (!AlmostEquals(sector->ceiling_height, sector->old_ceiling_height))
+        if (!epi::AlmostEquals(sector->ceiling_height, sector->old_ceiling_height))
             sector->interpolated_ceiling_height =
                 HMM_Lerp(sector->old_ceiling_height, fractional_tic, sector->ceiling_height);
         else

@@ -29,7 +29,7 @@
 #include <math.h>
 #include <stdio.h>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "con_main.h"
 #include "con_var.h"
 #include "dm_state.h"
@@ -953,10 +953,10 @@ static bool CheckSimiliarRegions(Sector *front, Sector *back)
 
     while (F && B)
     {
-        if (!AlmostEquals(F->top_height, B->top_height))
+        if (!epi::AlmostEquals(F->top_height, B->top_height))
             return false;
 
-        if (!AlmostEquals(F->bottom_height, B->bottom_height))
+        if (!epi::AlmostEquals(F->bottom_height, B->bottom_height))
             return false;
 
         F = F->higher;
@@ -1085,7 +1085,7 @@ static void AddWall(const Line *line)
                     l->color = am_colors[kAutomapColorWall];
                 DrawMLine(l);
             }
-            else if (!AlmostEquals(back->floor_height, front->floor_height))
+            else if (!epi::AlmostEquals(back->floor_height, front->floor_height))
             {
                 float diff = fabs(back->floor_height - front->floor_height);
 
@@ -1096,7 +1096,7 @@ static void AddWall(const Line *line)
                     l->color = am_colors[kAutomapColorStep];
                 DrawMLine(l);
             }
-            else if (!AlmostEquals(back->ceiling_height, front->ceiling_height))
+            else if (!epi::AlmostEquals(back->ceiling_height, front->ceiling_height))
             {
                 // ceiling level change
                 l->color = am_colors[kAutomapColorCeil];
@@ -1122,7 +1122,7 @@ static void AddWall(const Line *line)
         }
     }
     else if (frame_focus->player_ &&
-             (show_allmap || !AlmostEquals(frame_focus->player_->powers_[kPowerTypeAllMap], 0.0f)))
+             (show_allmap || !epi::AlmostEquals(frame_focus->player_->powers_[kPowerTypeAllMap], 0.0f)))
     {
         if (!(line->flags & kLineFlagDontDraw))
         {
@@ -1379,7 +1379,7 @@ static void DrawMarks(void)
 
     for (int i = 0; i < kAutomapTotalMarkPoints; i++)
     {
-        if (AlmostEquals(mark_points[i].X, (float)kAutomapNoMarkX))
+        if (epi::AlmostEquals(mark_points[i].X, (float)kAutomapNoMarkX))
             continue;
 
         float mx, my;

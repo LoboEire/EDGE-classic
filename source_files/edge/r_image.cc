@@ -1194,7 +1194,7 @@ static bool IM_ShouldMipmap(const Image *rim)
 
 static bool IM_ShouldSmooth(const Image *rim)
 {
-    if (!AlmostEquals(rim->blur_sigma_, 0.0f))
+    if (!epi::AlmostEquals(rim->blur_sigma_, 0.0f))
         return true;
 
     return image_smoothing ? true : false;

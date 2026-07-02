@@ -31,7 +31,7 @@
 
 #include "p_tick.h"
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "dm_state.h"
 #include "g_game.h"
 #include "n_network.h"
@@ -57,7 +57,7 @@ void MapObjectTicker()
 
     // pause if in menu and at least one tic has been run
     if (!network_game && (menu_active || rts_menu_active) &&
-        !AlmostEquals(players[console_player]->view_z_, kFloatUnused))
+        !epi::AlmostEquals(players[console_player]->view_z_, kFloatUnused))
     {
         return;
     }

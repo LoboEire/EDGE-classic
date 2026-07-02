@@ -16,7 +16,7 @@
 //
 //------------------------------------------------------------------------
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "coal.h"
 #include "ddf_flat.h" // DDFFLAT - Dasho
 #include "ddf_types.h"
@@ -218,7 +218,7 @@ static void PL_on_ground(coal::VM *vm, int argc)
     if (ui_player_who->map_object_->subsector_->sector->extrafloor_used == 0)
     {
         // on the edge above water/lava/etc? Handles edge walker case
-        if (!AlmostEquals(ui_player_who->map_object_->floor_z_,
+        if (!epi::AlmostEquals(ui_player_who->map_object_->floor_z_,
                           ui_player_who->map_object_->subsector_->sector->floor_height) &&
             !ui_player_who->map_object_->subsector_->sector->floor_vertex_slope)
             vm->ReturnFloat(0);

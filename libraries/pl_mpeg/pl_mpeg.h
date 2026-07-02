@@ -143,15 +143,8 @@ See below for detailed the API documentation.
 #ifndef PL_MPEG_H
 #define PL_MPEG_H
 
+#include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
-
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-#include <arm_neon.h>
-#elif defined(__SSE__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 1)
-#include <xmmintrin.h>
-#endif
-
 
 
 #ifdef __cplusplus
@@ -181,7 +174,7 @@ typedef struct plm_audio_t plm_audio_t;
 typedef struct {
 	int type;
 	double pts;
-	uint32_t length;
+	size_t length;
 	uint8_t *data;
 } plm_packet_t;
 
@@ -254,11 +247,21 @@ typedef void(*plm_audio_decode_callback)
 typedef void(*plm_buffer_load_callback)(plm_buffer_t *self, void *user);
 
 
+// Callback function for plm_buffer when it needs to seek
+
+typedef void(*plm_buffer_seek_callback)(plm_buffer_t *self, size_t offset, void *user);
+
+
+// Callback function for plm_buffer when it needs to tell the position
+
+typedef size_t(*plm_buffer_tell_callback)(plm_buffer_t *self, void *user);
+
 
 // -----------------------------------------------------------------------------
 // plm_* public API
 // High-Level API for loading/demuxing/decoding MPEG-PS data
 
+#ifndef PLM_NO_STDIO
 
 // Create a plmpeg instance with a filename. Returns NULL if the file could not
 // be opened.
@@ -271,13 +274,15 @@ plm_t *plm_create_with_filename(const char *filename);
 
 plm_t *plm_create_with_file(FILE *fh, int close_when_done);
 
+#endif // PLM_NO_STDIO
+
 
 // Create a plmpeg instance with a pointer to memory as source. This assumes the
 // whole file is in memory. The memory is not copied. Pass TRUE to 
 // free_when_done to let plmpeg call free() on the pointer when plm_destroy() 
 // is called.
 
-plm_t *plm_create_with_memory(uint8_t *bytes, uint32_t length, int free_when_done);
+plm_t *plm_create_with_memory(uint8_t *bytes, size_t length, int free_when_done);
 
 
 // Create a plmpeg instance with a plm_buffer as source. Pass TRUE to
@@ -468,14 +473,10 @@ plm_frame_t *plm_seek_frame(plm_t *self, double time, int seek_exact);
 // The default size for buffers created from files or by the high-level API
 
 #ifndef PLM_BUFFER_DEFAULT_SIZE
-#if defined (__LINUX__) || defined (__MACH__)
 #define PLM_BUFFER_DEFAULT_SIZE (128 * 1024)
-#else // embedded systems don't need such a big buffer
-#define PLM_BUFFER_DEFAULT_SIZE (4 * 1024)
-#endif
-#define PLM_BUFFER_HIGHWATER ((PLM_BUFFER_DEFAULT_SIZE * 3)/4)
 #endif
 
+#ifndef PLM_NO_STDIO
 
 // Create a buffer instance with a filename. Returns NULL if the file could not
 // be opened.
@@ -488,19 +489,35 @@ plm_buffer_t *plm_buffer_create_with_filename(const char *filename);
 
 plm_buffer_t *plm_buffer_create_with_file(FILE *fh, int close_when_done);
 
+#endif // PLM_NO_STDIO
+
+
+// Create a buffer instance with custom callbacks for loading, seeking and
+// telling the position. This behaves like a file handle, but with user-defined
+// callbacks, useful for file handles that don't use the standard FILE API.
+// Setting the length and closing/freeing has to be done manually.
+
+plm_buffer_t *plm_buffer_create_with_callbacks(
+	plm_buffer_load_callback load_callback,
+	plm_buffer_seek_callback seek_callback,
+	plm_buffer_tell_callback tell_callback,
+	size_t length,
+	void *user
+);
+
 
 // Create a buffer instance with a pointer to memory as source. This assumes
 // the whole file is in memory. The bytes are not copied. Pass 1 to 
 // free_when_done to let plmpeg call free() on the pointer when plm_destroy() 
 // is called.
 
-plm_buffer_t *plm_buffer_create_with_memory(uint8_t *bytes, uint32_t length, int free_when_done);
+plm_buffer_t *plm_buffer_create_with_memory(uint8_t *bytes, size_t length, int free_when_done);
 
 
 // Create an empty buffer with an initial capacity. The buffer will grow
 // as needed. Data that has already been read, will be discarded.
 
-plm_buffer_t *plm_buffer_create_with_capacity(uint32_t capacity);
+plm_buffer_t *plm_buffer_create_with_capacity(size_t capacity);
 
 
 // Create an empty buffer with an initial capacity. The buffer will grow
@@ -508,7 +525,7 @@ plm_buffer_t *plm_buffer_create_with_capacity(uint32_t capacity);
 // loading a file over the network, without needing to throttle the download. 
 // It also allows for seeking in the already loaded data.
 
-plm_buffer_t *plm_buffer_create_for_appending(uint32_t initial_capacity);
+plm_buffer_t *plm_buffer_create_for_appending(size_t initial_capacity);
 
 
 // Destroy a buffer instance and free all data
@@ -522,7 +539,7 @@ void plm_buffer_destroy(plm_buffer_t *self);
 // passed in length, except when the buffer was created _with_memory() for
 // which _write() is forbidden.
 
-uint32_t plm_buffer_write(plm_buffer_t *self, uint8_t *bytes, uint32_t length);
+size_t plm_buffer_write(plm_buffer_t *self, uint8_t *bytes, size_t length);
 
 
 // Mark the current byte length as the end of this buffer and signal that no 
@@ -811,69 +828,41 @@ plm_samples_t *plm_audio_decode(plm_audio_t *self);
 
 #include <string.h>
 #include <stdlib.h>
+#ifndef PLM_NO_STDIO
+#include <stdio.h>
+#endif
 
 #ifndef TRUE
 #define TRUE 1
 #define FALSE 0
 #endif
 
-
 #ifndef PLM_MALLOC
-#ifdef ARDUINO_ARCH_ESP32
-#if !(defined(CONFIG_ESP32_SPIRAM_SUPPORT) || defined(CONFIG_ESP32S3_SPIRAM_SUPPORT))
-    #error "Please enable PSRAM support"
-#endif
-    #include "esp_heap_caps_init.h"
-    #define PLM_MALLOC(sz) heap_caps_aligned_alloc(16, sz, MALLOC_CAP_8BIT)
-#else
 	#define PLM_MALLOC(sz) malloc(sz)
-#endif
 	#define PLM_FREE(p) free(p)
 	#define PLM_REALLOC(p, sz) realloc(p, sz)
 #endif
 
 #define PLM_UNUSED(expr) (void)(expr)
-
-#if defined(__GNUC__) || defined(__clang__)
-static inline uint32_t byte_swap_32(uint32_t p_n) {
-	return __builtin_bswap32(p_n);
-}
-#elif defined(_MSC_VER)
-static inline uint32_t byte_swap_32(uint32_t p_n) {
-	return _byteswap_ulong(p_n);
-}
-#else
-static inline uint32_t byte_swap_32(uint32_t p_n) {
-	uint32_t a;
-	a = (p_n & 0xFFU) << 24;
-	a |= (p_n & 0xFF00U) << 8;
-	a |= (p_n >> 8) & 0xFF00U;
-	a |= (p_n >> 24) & 0xFFU;
-	return a;
-}
+#ifdef _MSC_VER
+	#pragma warning(disable:4996)
 #endif
 
-static const uint8_t theClampTable[] = {
-    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // never goes below -15
-    0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,
-    0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1a,0x1b,0x1c,0x1d,0x1e,0x1f,
-    0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x27,0x28,0x29,0x2a,0x2b,0x2c,0x2d,0x2e,0x2f,
-    0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x3a,0x3b,0x3c,0x3d,0x3e,0x3f,
-    0x40,0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48,0x49,0x4a,0x4b,0x4c,0x4d,0x4e,0x4f,
-    0x50,0x51,0x52,0x53,0x54,0x55,0x56,0x57,0x58,0x59,0x5a,0x5b,0x5c,0x5d,0x5e,0x5f,
-    0x60,0x61,0x62,0x63,0x64,0x65,0x66,0x67,0x68,0x69,0x6a,0x6b,0x6c,0x6d,0x6e,0x6f,
-    0x70,0x71,0x72,0x73,0x74,0x75,0x76,0x77,0x78,0x79,0x7a,0x7b,0x7c,0x7d,0x7e,0x7f,
-    0x80,0x81,0x82,0x83,0x84,0x85,0x86,0x87,0x88,0x89,0x8a,0x8b,0x8c,0x8d,0x8e,0x8f,
-    0x90,0x91,0x92,0x93,0x94,0x95,0x96,0x97,0x98,0x99,0x9a,0x9b,0x9c,0x9d,0x9e,0x9f,
-    0xa0,0xa1,0xa2,0xa3,0xa4,0xa5,0xa6,0xa7,0xa8,0xa9,0xaa,0xab,0xac,0xad,0xae,0xaf,
-    0xb0,0xb1,0xb2,0xb3,0xb4,0xb5,0xb6,0xb7,0xb8,0xb9,0xba,0xbb,0xbc,0xbd,0xbe,0xbf,
-    0xc0,0xc1,0xc2,0xc3,0xc4,0xc5,0xc6,0xc7,0xc8,0xc9,0xca,0xcb,0xcc,0xcd,0xce,0xcf,
-    0xd0,0xd1,0xd2,0xd3,0xd4,0xd5,0xd6,0xd7,0xd8,0xd9,0xda,0xdb,0xdc,0xdd,0xde,0xdf,
-    0xe0,0xe1,0xe2,0xe3,0xe4,0xe5,0xe6,0xe7,0xe8,0xe9,0xea,0xeb,0xec,0xed,0xee,0xef,
-    0xf0,0xf1,0xf2,0xf3,0xf4,0xf5,0xf6,0xf7,0xf8,0xf9,0xfa,0xfb,0xfc,0xfd,0xfe,0xff,
-    0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff, // or above 264
-};
-static const uint8_t *u8ClampTable = &theClampTable[16];
+#if defined(__SSE2__) || defined(_M_X64) || defined(_M_AMD64) || \
+	(defined(_M_IX86_FP) && _M_IX86_FP >= 2)
+	#define PLM_HAVE_SSE2 1
+	#include <emmintrin.h>
+#elif defined(__ARM_NEON) || defined(__ARM_NEON__)
+	#define PLM_HAVE_NEON 1
+	#include <arm_neon.h>
+#elif defined(__wasm_simd128__)
+	#define PLM_HAVE_WASM_SIMD 1
+	#include <wasm_simd128.h>
+#endif
+
+#if defined(PLM_HAVE_SSE2) || defined(PLM_HAVE_NEON) || defined(PLM_HAVE_WASM_SIMD)
+	#define PLM_HAVE_SIMD 1
+#endif
 
 // -----------------------------------------------------------------------------
 // plm (high-level interface) implementation
@@ -910,6 +899,8 @@ void plm_read_video_packet(plm_buffer_t *buffer, void *user);
 void plm_read_audio_packet(plm_buffer_t *buffer, void *user);
 void plm_read_packets(plm_t *self, int requested_type);
 
+#ifndef PLM_NO_STDIO
+
 plm_t *plm_create_with_filename(const char *filename) {
 	plm_buffer_t *buffer = plm_buffer_create_with_filename(filename);
 	if (!buffer) {
@@ -923,7 +914,9 @@ plm_t *plm_create_with_file(FILE *fh, int close_when_done) {
 	return plm_create_with_buffer(buffer, TRUE);
 }
 
-plm_t *plm_create_with_memory(uint8_t *bytes, uint32_t length, int free_when_done) {
+#endif // PLM_NO_STDIO
+
+plm_t *plm_create_with_memory(uint8_t *bytes, size_t length, int free_when_done) {
 	plm_buffer_t *buffer = plm_buffer_create_with_memory(bytes, length, free_when_done);
 	return plm_create_with_buffer(buffer, TRUE);
 }
@@ -1128,6 +1121,7 @@ void plm_rewind(plm_t *self) {
 
 	plm_demux_rewind(self->demux);
 	self->time = 0;
+	self->has_ended = FALSE;
 }
 
 int plm_get_loop(plm_t *self) {
@@ -1405,16 +1399,20 @@ enum plm_buffer_mode {
 };
 
 struct plm_buffer_t {
-	uint32_t bit_index;
-    uint32_t capacity;
-    uint32_t length;
-    uint32_t total_size;
-	uint8_t discard_read_bytes;
-    uint8_t has_ended;
-    uint8_t free_when_done;
-    uint8_t close_when_done;
+	size_t bit_index;
+	size_t capacity;
+	size_t length;
+	size_t total_size;
+	int discard_read_bytes;
+	int has_ended;
+	int free_when_done;
+#ifndef PLM_NO_STDIO
+	int close_when_done;
 	FILE *fh;
+#endif
 	plm_buffer_load_callback load_callback;
+	plm_buffer_seek_callback seek_callback;
+	plm_buffer_tell_callback tell_callback;
 	void *load_callback_user_data;
 	uint8_t *bytes;
 	enum plm_buffer_mode mode;
@@ -1432,12 +1430,17 @@ typedef struct {
 
 
 void plm_buffer_seek(plm_buffer_t *self, size_t pos);
-uint32_t plm_buffer_tell(plm_buffer_t *self);
+size_t plm_buffer_tell(plm_buffer_t *self);
 void plm_buffer_discard_read_bytes(plm_buffer_t *self);
+
+#ifndef PLM_NO_STDIO
 void plm_buffer_load_file_callback(plm_buffer_t *self, void *user);
+void plm_buffer_seek_file_callback(plm_buffer_t *self, size_t offset, void *user);
+size_t plm_buffer_tell_file_callback(plm_buffer_t *self, void *user);
+#endif
 
 int plm_buffer_has(plm_buffer_t *self, size_t count);
-uint32_t plm_buffer_read(plm_buffer_t *self, int count);
+int plm_buffer_read(plm_buffer_t *self, int count);
 void plm_buffer_align(plm_buffer_t *self);
 void plm_buffer_skip(plm_buffer_t *self, size_t count);
 int plm_buffer_skip_bytes(plm_buffer_t *self, uint8_t v);
@@ -1446,6 +1449,8 @@ int plm_buffer_find_start_code(plm_buffer_t *self, int code);
 int plm_buffer_no_start_code(plm_buffer_t *self);
 int16_t plm_buffer_read_vlc(plm_buffer_t *self, const plm_vlc_t *table);
 uint16_t plm_buffer_read_vlc_uint(plm_buffer_t *self, const plm_vlc_uint_t *table);
+
+#ifndef PLM_NO_STDIO
 
 plm_buffer_t *plm_buffer_create_with_filename(const char *filename) {
 	FILE *fh = fopen(filename, "rb");
@@ -1463,14 +1468,35 @@ plm_buffer_t *plm_buffer_create_with_file(FILE *fh, int close_when_done) {
 	self->discard_read_bytes = TRUE;
 	
 	fseek(self->fh, 0, SEEK_END);
-	self->total_size = (uint32_t)ftell(self->fh);
+	self->total_size = ftell(self->fh);
 	fseek(self->fh, 0, SEEK_SET);
 
-	plm_buffer_set_load_callback(self, plm_buffer_load_file_callback, NULL);
+	self->load_callback = plm_buffer_load_file_callback;
+	self->seek_callback = plm_buffer_seek_file_callback;
+	self->tell_callback = plm_buffer_tell_file_callback;
 	return self;
 }
 
-plm_buffer_t *plm_buffer_create_with_memory(uint8_t *bytes, uint32_t length, int free_when_done) {
+#endif // PLM_NO_STDIO
+
+plm_buffer_t *plm_buffer_create_with_callbacks(
+	plm_buffer_load_callback load_callback,
+	plm_buffer_seek_callback seek_callback,
+	plm_buffer_tell_callback tell_callback,
+	size_t length,
+	void *user
+) {
+	plm_buffer_t *self = plm_buffer_create_with_capacity(PLM_BUFFER_DEFAULT_SIZE);
+	self->mode = PLM_BUFFER_MODE_FILE;
+	self->total_size = length;
+	self->load_callback = load_callback;
+	self->seek_callback = seek_callback;
+	self->tell_callback = tell_callback;
+	self->load_callback_user_data = user;
+	return self;
+}
+
+plm_buffer_t *plm_buffer_create_with_memory(uint8_t *bytes, size_t length, int free_when_done) {
 	plm_buffer_t *self = (plm_buffer_t *)PLM_MALLOC(sizeof(plm_buffer_t));
 	memset(self, 0, sizeof(plm_buffer_t));
 	self->capacity = length;
@@ -1483,7 +1509,7 @@ plm_buffer_t *plm_buffer_create_with_memory(uint8_t *bytes, uint32_t length, int
 	return self;
 }
 
-plm_buffer_t *plm_buffer_create_with_capacity(uint32_t capacity) {
+plm_buffer_t *plm_buffer_create_with_capacity(size_t capacity) {
 	plm_buffer_t *self = (plm_buffer_t *)PLM_MALLOC(sizeof(plm_buffer_t));
 	memset(self, 0, sizeof(plm_buffer_t));
 	self->capacity = capacity;
@@ -1494,7 +1520,7 @@ plm_buffer_t *plm_buffer_create_with_capacity(uint32_t capacity) {
 	return self;
 }
 
-plm_buffer_t *plm_buffer_create_for_appending(uint32_t initial_capacity) {
+plm_buffer_t *plm_buffer_create_for_appending(size_t initial_capacity) {
 	plm_buffer_t *self = plm_buffer_create_with_capacity(initial_capacity);
 	self->mode = PLM_BUFFER_MODE_APPEND;
 	self->discard_read_bytes = FALSE;
@@ -1502,9 +1528,11 @@ plm_buffer_t *plm_buffer_create_for_appending(uint32_t initial_capacity) {
 }
 
 void plm_buffer_destroy(plm_buffer_t *self) {
+#ifndef PLM_NO_STDIO
 	if (self->fh && self->close_when_done) {
 		fclose(self->fh);
 	}
+#endif
 	if (self->free_when_done) {
 		PLM_FREE(self->bytes);
 	}
@@ -1521,10 +1549,11 @@ size_t plm_buffer_get_remaining(plm_buffer_t *self) {
 	return self->length - (self->bit_index >> 3);
 }
 
-uint32_t plm_buffer_write(plm_buffer_t *self, uint8_t *bytes, uint32_t length) {
+size_t plm_buffer_write(plm_buffer_t *self, uint8_t *bytes, size_t length) {
 	if (self->mode == PLM_BUFFER_MODE_FIXED_MEM) {
 		return 0;
 	}
+
 	if (self->discard_read_bytes) {
 		// This should be a ring buffer, but instead it just shifts all unread 
 		// data to the beginning of the buffer and appends new data at the end. 
@@ -1539,7 +1568,7 @@ uint32_t plm_buffer_write(plm_buffer_t *self, uint8_t *bytes, uint32_t length) {
 	// Do we have to resize to fit the new data?
 	size_t bytes_available = self->capacity - self->length;
 	if (bytes_available < length) {
-		uint32_t new_size = self->capacity;
+		size_t new_size = self->capacity;
 		do {
 			new_size *= 2;
 		} while (new_size - self->length < length);
@@ -1569,8 +1598,8 @@ void plm_buffer_rewind(plm_buffer_t *self) {
 void plm_buffer_seek(plm_buffer_t *self, size_t pos) {
 	self->has_ended = FALSE;
 
-	if (self->mode == PLM_BUFFER_MODE_FILE) {
-		fseek(self->fh, pos, SEEK_SET);
+	if (self->seek_callback) {
+		self->seek_callback(self, pos, self->load_callback_user_data);
 		self->bit_index = 0;
 		self->length = 0;
 	}
@@ -1584,52 +1613,30 @@ void plm_buffer_seek(plm_buffer_t *self, size_t pos) {
 		self->total_size = 0;
 	}
 	else if (pos < self->length) {
-		self->bit_index = (uint32_t)(pos << 3);
+		self->bit_index = pos << 3;
 	}
 }
 
-uint32_t plm_buffer_tell(plm_buffer_t *self) {
-	return self->mode == PLM_BUFFER_MODE_FILE
-		? (uint32_t)ftell(self->fh) + (self->bit_index >> 3) - self->length
+size_t plm_buffer_tell(plm_buffer_t *self) {
+	return self->tell_callback
+		? self->tell_callback(self, self->load_callback_user_data) + (self->bit_index >> 3) - self->length
 		: self->bit_index >> 3;
 }
 
 void plm_buffer_discard_read_bytes(plm_buffer_t *self) {
-#ifndef NEW_WAY
 	size_t byte_pos = self->bit_index >> 3;
 	if (byte_pos == self->length) {
 		self->bit_index = 0;
 		self->length = 0;
-	} else if (byte_pos > 0) {
-        // This normally moves only the last 4 bytes; calling memmove is a waste of time
-        if (self->length - byte_pos < 16) {
-            uint8_t *d = self->bytes;
-            uint8_t *s = &self->bytes[byte_pos];
-            uint8_t *pEnd = &self->bytes[self->length];
-            while (s < pEnd) {
-                *d++ = *s++;
-            }
-        } else {
-            memmove(self->bytes, self->bytes + byte_pos, self->length - byte_pos);
-        }
-        self->bit_index -= byte_pos << 3;
-        self->length -= byte_pos;
 	}
-#else
-    size_t byte_pos = self->bit_index >> 3;
-    if (byte_pos >= self->length)
-    {
-            self->bit_index = 0;
-            self->length = 0;
-    }
-    else if (byte_pos > 0)
-    {
-            memmove(self->bytes, self->bytes + byte_pos, self->length - byte_pos);
-            self->bit_index -= byte_pos << 3;
-            self->length -= byte_pos;
-    }
-#endif
+	else if (byte_pos > 0) {
+		memmove(self->bytes, self->bytes + byte_pos, self->length - byte_pos);
+		self->bit_index -= byte_pos << 3;
+		self->length -= byte_pos;
+	}
 }
+
+#ifndef PLM_NO_STDIO
 
 void plm_buffer_load_file_callback(plm_buffer_t *self, void *user) {
 	PLM_UNUSED(user);
@@ -1646,6 +1653,18 @@ void plm_buffer_load_file_callback(plm_buffer_t *self, void *user) {
 		self->has_ended = TRUE;
 	}
 }
+
+void plm_buffer_seek_file_callback(plm_buffer_t *self, size_t offset, void *user) {
+	PLM_UNUSED(user);
+	fseek(self->fh, offset, SEEK_SET);
+}
+
+size_t plm_buffer_tell_file_callback(plm_buffer_t *self, void *user) {
+	PLM_UNUSED(user);
+	return ftell(self->fh);
+}
+
+#endif // PLM_NO_STDIO
 
 int plm_buffer_has_ended(plm_buffer_t *self) {
 	return self->has_ended;
@@ -1670,36 +1689,26 @@ int plm_buffer_has(plm_buffer_t *self, size_t count) {
 	return FALSE;
 }
 
-uint32_t plm_buffer_read(plm_buffer_t *self, int count) {
-// DEBUG - no need to keep checking for available bits here
-//	if (!plm_buffer_has(self, count)) {
-//		return 0;
-//	}
+int plm_buffer_read(plm_buffer_t *self, int count) {
+	if (!plm_buffer_has(self, count)) {
+		return 0;
+	}
 
-	uint32_t value = 0;
-    uint32_t bit_index = self->bit_index;
-    uint8_t *s = &self->bytes[bit_index >> 3];
-    uint32_t u32 = *(uint32_t *)s; // assume we can read unaligned
-    u32 = byte_swap_32(u32); // codes are stored as big-endian
-    value = u32 << (bit_index & 7);
-    bit_index += count;
-    value >>= (32 - count);
-#ifdef OLD_WAY
+	int value = 0;
 	while (count) {
-		int current_byte = *s++;
+		int current_byte = self->bytes[self->bit_index >> 3];
 
-		int remaining = 8 - (bit_index & 7); // Remaining bits in byte
+		int remaining = 8 - (self->bit_index & 7); // Remaining bits in byte
 		int read = remaining < count ? remaining : count; // Bits in self run
 		int shift = remaining - read;
 		int mask = (0xff >> (8 - read));
 
 		value = (value << read) | ((current_byte & (mask << shift)) >> shift);
 
-		bit_index += read;
+		self->bit_index += read;
 		count -= read;
 	}
-#endif
-    self->bit_index = bit_index;
+
 	return value;
 }
 
@@ -1724,24 +1733,22 @@ int plm_buffer_skip_bytes(plm_buffer_t *self, uint8_t v) {
 }
 
 int plm_buffer_next_start_code(plm_buffer_t *self) {
-    uint8_t *s, *pEnd;
-try_again:
-    s = &self->bytes[(self->bit_index+7)>>3]; // start on a byte boundary
-    pEnd = &self->bytes[self->length];
-    while ((int)(pEnd - s) >= 5) {
-        if (s[0] == 0 && s[1] == 0 && s[2] == 1) { // start code
-            self->bit_index = (uint32_t)(s + 4 - self->bytes) << 3;
-            return s[3];
-        }
-        s++;
-    }
-    // we've run out of data, try to read more
-    self->bit_index = (uint32_t)(s - self->bytes) << 3;
-    if (plm_buffer_has(self, (5 << 3))) {
-        goto try_again;
-    }
-    return -1; // we failed to find a start code and ran out of data
-} /* plm_buffer_next_start_code() */
+	plm_buffer_align(self);
+
+	while (plm_buffer_has(self, (5 << 3))) {
+		size_t byte_index = (self->bit_index) >> 3;
+		if (
+			self->bytes[byte_index] == 0x00 &&
+			self->bytes[byte_index + 1] == 0x00 &&
+			self->bytes[byte_index + 2] == 0x01
+		) {
+			self->bit_index = (byte_index + 4) << 3;
+			return self->bytes[byte_index + 3];
+		}
+		self->bit_index += 8;
+	}
+	return -1;
+}
 
 int plm_buffer_find_start_code(plm_buffer_t *self, int code) {
 	int current = 0;
@@ -1755,7 +1762,7 @@ int plm_buffer_find_start_code(plm_buffer_t *self, int code) {
 }
 
 int plm_buffer_has_start_code(plm_buffer_t *self, int code) {
-	uint32_t previous_bit_index = self->bit_index;
+	size_t previous_bit_index = self->bit_index;
 	int previous_discard_read_bytes = self->discard_read_bytes;
 	
 	self->discard_read_bytes = FALSE;
@@ -2233,7 +2240,7 @@ double plm_demux_decode_time(plm_demux_t *self) {
 }
 
 plm_packet_t *plm_demux_decode_packet(plm_demux_t *self, int type) {
-	if (!plm_buffer_has(self->buffer, 20 << 3)) {
+	if (!plm_buffer_has(self->buffer, 16 << 3)) {
 		return NULL;
 	}
 
@@ -2548,85 +2555,6 @@ static const plm_vlc_t PLM_VIDEO_MOTION[] = {
 	{       0,   11}, {       0,  -11},  //  33: 0000 0100 01x
 };
 
-//
-// Codes to produce the fast lookup table for DCT coefficients
-//
-// The maximum length of any VLC is 16 bits and the minimum is 2.
-// The "split point" is 6/10 bits. Codes which start with 6 zeros
-// are long codes, otherwise they are short. This requires 2
-// 10-bit fast lookup tables to decode all of the codes with a
-// single read. Each of these lookup tables will have the run,
-// level and actual code length encoded as a 16-bit value (6+6+4 bits)
-// This then requires (1024+1024)*2 = 4096 bytes
-//
-#define MPEG1_VLC_ELEMENTS 113
-// code pattern followed by bit length
-const uint8_t mpeg1_vlc_table[MPEG1_VLC_ELEMENTS][2] = {
- { 0x3, 2 }, { 0x4, 4 }, { 0x5, 5 }, { 0x6, 7 },
- { 0x26, 8 }, { 0x21, 8 }, { 0xa, 10 }, { 0x1d, 12 },
- { 0x18, 12 }, { 0x13, 12 }, { 0x10, 12 }, { 0x1a, 13 },
- { 0x19, 13 }, { 0x18, 13 }, { 0x17, 13 }, { 0x1f, 14 },
- { 0x1e, 14 }, { 0x1d, 14 }, { 0x1c, 14 }, { 0x1b, 14 },
- { 0x1a, 14 }, { 0x19, 14 }, { 0x18, 14 }, { 0x17, 14 },
- { 0x16, 14 }, { 0x15, 14 }, { 0x14, 14 }, { 0x13, 14 },
- { 0x12, 14 }, { 0x11, 14 }, { 0x10, 14 }, { 0x18, 15 },
- { 0x17, 15 }, { 0x16, 15 }, { 0x15, 15 }, { 0x14, 15 },
- { 0x13, 15 }, { 0x12, 15 }, { 0x11, 15 }, { 0x10, 15 },
- { 0x3, 3 }, { 0x6, 6 }, { 0x25, 8 }, { 0xc, 10 },
- { 0x1b, 12 }, { 0x16, 13 }, { 0x15, 13 }, { 0x1f, 15 },
- { 0x1e, 15 }, { 0x1d, 15 }, { 0x1c, 15 }, { 0x1b, 15 },
- { 0x1a, 15 }, { 0x19, 15 }, { 0x13, 16 }, { 0x12, 16 },
- { 0x11, 16 }, { 0x10, 16 }, { 0x5, 4 }, { 0x4, 7 },
- { 0xb, 10 }, { 0x14, 12 }, { 0x14, 13 }, { 0x7, 5 },
- { 0x24, 8 }, { 0x1c, 12 }, { 0x13, 13 }, { 0x6, 5 },
- { 0xf, 10 }, { 0x12, 12 }, { 0x7, 6 }, { 0x9, 10 },
- { 0x12, 13 }, { 0x5, 6 }, { 0x1e, 12 }, { 0x14, 16 },
- { 0x4, 6 }, { 0x15, 12 }, { 0x7, 7 }, { 0x11, 12 },
- { 0x5, 7 }, { 0x11, 13 }, { 0x27, 8 }, { 0x10, 13 },
- { 0x23, 8 }, { 0x1a, 16 }, { 0x22, 8 }, { 0x19, 16 },
- { 0x20, 8 }, { 0x18, 16 }, { 0xe, 10 }, { 0x17, 16 },
- { 0xd, 10 }, { 0x16, 16 }, { 0x8, 10 }, { 0x15, 16 },
- { 0x1f, 12 }, { 0x1a, 12 }, { 0x19, 12 }, { 0x17, 12 },
- { 0x16, 12 }, { 0x1f, 13 }, { 0x1e, 13 }, { 0x1d, 13 },
- { 0x1c, 13 }, { 0x1b, 13 }, { 0x1f, 16 }, { 0x1e, 16 },
- { 0x1d, 16 }, { 0x1c, 16 }, { 0x1b, 16 },
- { 0x1, 6 }, /* escape */
- { 0x2, 2 }, /* EOB */
- };
-const uint8_t mpeg1_level[MPEG1_VLC_ELEMENTS] = {
-  1,  2,  3,  4,  5,  6,  7,  8,
-  9, 10, 11, 12, 13, 14, 15, 16,
- 17, 18, 19, 20, 21, 22, 23, 24,
- 25, 26, 27, 28, 29, 30, 31, 32,
- 33, 34, 35, 36, 37, 38, 39, 40,
-  1,  2,  3,  4,  5,  6,  7,  8,
-  9, 10, 11, 12, 13, 14, 15, 16,
- 17, 18,  1,  2,  3,  4,  5,  1,
-  2,  3,  4,  1,  2,  3,  1,  2,
-  3,  1,  2,  3,  1,  2,  1,  2,
-  1,  2,  1,  2,  1,  2,  1,  2,
-  1,  2,  1,  2,  1,  2,  1,  2,
-  1,  1,  1,  1,  1,  1,  1,  1,
-  1,  1,  1,  1,  1,  1,  1, 0xff /* escape */, 0x00 /* EOB */
-};
-
-const uint8_t mpeg1_run[MPEG1_VLC_ELEMENTS] = {
-  0,  0,  0,  0,  0,  0,  0,  0,
-  0,  0,  0,  0,  0,  0,  0,  0,
-  0,  0,  0,  0,  0,  0,  0,  0,
-  0,  0,  0,  0,  0,  0,  0,  0,
-  0,  0,  0,  0,  0,  0,  0,  0,
-  1,  1,  1,  1,  1,  1,  1,  1,
-  1,  1,  1,  1,  1,  1,  1,  1,
-  1,  1,  2,  2,  2,  2,  2,  3,
-  3,  3,  3,  4,  4,  4,  5,  5,
-  5,  6,  6,  6,  7,  7,  8,  8,
-  9,  9, 10, 10, 11, 11, 12, 12,
- 13, 13, 14, 14, 15, 15, 16, 16,
- 17, 18, 19, 20, 21, 22, 23, 24,
- 25, 26, 27, 28, 29, 30, 31, 0xff /* escape */, 0x00 /* EOB */
-};
-
 static const plm_vlc_t PLM_VIDEO_DCT_SIZE_LUMINANCE[] = {
 	{  1 << 1,    0}, {  2 << 1,    0},  //   0: x
 	{       0,    1}, {       0,    2},  //   1: 0x
@@ -2822,8 +2750,8 @@ struct plm_video_t {
 	int macroblock_type;
 	int macroblock_intra;
 
-	int32_t dc_predictor[3];
-    
+	int dc_predictor[3];
+
 	plm_buffer_t *buffer;
 	int destroy_buffer_when_done;
 
@@ -2831,9 +2759,9 @@ struct plm_video_t {
 	plm_frame_t frame_forward;
 	plm_frame_t frame_backward;
 
-    uint16_t *fast_vlc;
+	uint8_t *frames_data;
 
-	int32_t block_data[64];
+	int block_data[64];
 	uint8_t intra_quant_matrix[64];
 	uint8_t non_intra_quant_matrix[64];
 
@@ -2842,14 +2770,13 @@ struct plm_video_t {
 };
 
 static inline uint8_t plm_clamp(int n) {
-//	if (n > 255) {
-//		n = 255;
-//	}
-//	else if (n < 0) {
-//		n = 0;
-//	}
-//	return n;
-    return u8ClampTable[n];
+	if (n > 255) {
+		n = 255;
+	}
+	else if (n < 0) {
+		n = 0;
+	}
+	return n;
 }
 
 int plm_video_decode_sequence_header(plm_video_t *self);
@@ -2864,50 +2791,7 @@ void plm_video_copy_macroblock(plm_video_t *self, plm_frame_t *s, int motion_h, 
 void plm_video_interpolate_macroblock(plm_video_t *self, plm_frame_t *s, int motion_h, int motion_v);
 void plm_video_process_macroblock(plm_video_t *self, uint8_t *s, uint8_t *d, int mh, int mb, int bs, int interp);
 void plm_video_decode_block(plm_video_t *self, int block);
-void plm_video_idct(int32_t *block, int iMaxIndex);
-void plm_make_fast_vlc(plm_video_t *self);
-
-//
-// Create a fast lookup table for the VLC coefficients
-// Code lengths are 2-16 bits with a split point at 6/10 (first 6 bits == 0)
-// Create two 10-bit tables (short/long) which contain the run, level and bit length
-//                                                  15              0
-// 8 bits of run, 8 bits of level together (16-bits), another table of 8-bit lengths
-//
-void plm_make_fast_vlc(plm_video_t *self)
-{
-    uint16_t *pTables, u16RL, u16Code, u16Mask;
-    uint8_t *pLens;
-    int i, j, len, count, start;
-    
-    self->fast_vlc = pTables = (uint16_t *)malloc(6144);
-    pLens = (uint8_t *)&pTables[2048];
-    for (i=0; i<MPEG1_VLC_ELEMENTS; i++) { // for each unique VLC code
-        u16Code = mpeg1_vlc_table[i][0]; // bit pattern
-        len = mpeg1_vlc_table[i][1]; // bit length;
-        u16RL = (mpeg1_run[i] << 8); // top 8 bits = run
-        u16RL |= mpeg1_level[i]; // bottom bits = level
-        // Is this code long or short?
-        u16Mask = (len > 6) ? (0x3f << (len-6)) : 0x3f;
-        if (u16Code & u16Mask) { // short code
-            // Repeat all permutations of the code + trailing bits for our fast lookup table
-            count = 1 << (10 - len);
-            start = u16Code << (10-len);
-            for (j=0; j<count; j++) {
-                pTables[start + j] = u16RL;
-                pLens[start + j] = len;
-            }
-        } else { // long code
-            // Repeat all permutations of the code + trailing bits for our fast lookup table
-            count = 1 << (16 - len);
-            start = u16Code << (16-len);
-            for (j=0; j<count; j++) {
-                pTables[1024 + start + j] = u16RL;
-                pLens[1024 + start + j] = len;
-            }
-        }
-    }
-} /* plm_make_fast_vlc() */
+void plm_video_idct(int *block);
 
 plm_video_t * plm_video_create_with_buffer(plm_buffer_t *buffer, int destroy_when_done) {
 	plm_video_t *self = (plm_video_t *)PLM_MALLOC(sizeof(plm_video_t));
@@ -2930,11 +2814,9 @@ void plm_video_destroy(plm_video_t *self) {
 	}
 
 	if (self->has_sequence_header) {
-        PLM_FREE(self->frame_current.y.data);
-        PLM_FREE(self->frame_forward.y.data);
-        PLM_FREE(self->frame_backward.y.data);
+		PLM_FREE(self->frames_data);
 	}
-    PLM_FREE(self->fast_vlc);
+
 	PLM_FREE(self);
 }
 
@@ -3144,12 +3026,10 @@ int plm_video_decode_sequence_header(plm_video_t *self) {
 	size_t chroma_plane_size = self->chroma_width * self->chroma_height;
 	size_t frame_data_size = (luma_plane_size + 2 * chroma_plane_size);
 
-    // Split the allocations so that the ESP32 can fit 1 or more in SRAM instead of all in PSRAM
-    plm_video_init_frame(self, &self->frame_current, (uint8_t *)PLM_MALLOC(frame_data_size));
-    plm_video_init_frame(self, &self->frame_forward, (uint8_t *)PLM_MALLOC(frame_data_size));
-    plm_video_init_frame(self, &self->frame_backward, (uint8_t *)PLM_MALLOC(frame_data_size));
-    // init the fast vlc lookup table
-    plm_make_fast_vlc(self);
+	self->frames_data = (uint8_t*)PLM_MALLOC(frame_data_size * 3);
+	plm_video_init_frame(self, &self->frame_current, self->frames_data + frame_data_size * 0);
+	plm_video_init_frame(self, &self->frame_forward, self->frames_data + frame_data_size * 1);
+	plm_video_init_frame(self, &self->frame_backward, self->frames_data + frame_data_size * 2);
 
 	self->has_sequence_header = TRUE;
 	return TRUE;
@@ -3229,7 +3109,7 @@ void plm_video_decode_picture(plm_video_t *self) {
 	// Decode all slices
 	while (PLM_START_IS_SLICE(self->start_code)) {
 		plm_video_decode_slice(self, self->start_code & 0x000000FF);
-		if (self->macroblock_address >= self->mb_size - 2) {
+		if (self->macroblock_address >= self->mb_size - 1) {
 			break;
 		}
 		self->start_code = plm_buffer_next_start_code(self->buffer);
@@ -3273,8 +3153,8 @@ void plm_video_decode_slice(plm_video_t *self, int slice) {
 
 void plm_video_decode_macroblock(plm_video_t *self) {
 	// Decode increment
-	int t, increment = 0;
-	t = plm_buffer_read_vlc(self->buffer, PLM_VIDEO_MACROBLOCK_ADDRESS_INCREMENT);
+	int increment = 0;
+	int t = plm_buffer_read_vlc(self->buffer, PLM_VIDEO_MACROBLOCK_ADDRESS_INCREMENT);
 
 	while (t == 34) {
 		// macroblock_stuffing
@@ -3323,7 +3203,7 @@ void plm_video_decode_macroblock(plm_video_t *self) {
 		self->macroblock_address++;
 	}
 
-    self->mb_row = self->macroblock_address / self->mb_width;
+	self->mb_row = self->macroblock_address / self->mb_width;
 	self->mb_col = self->macroblock_address % self->mb_width;
 
 	if (self->mb_col >= self->mb_width || self->mb_row >= self->mb_height) {
@@ -3467,44 +3347,6 @@ void plm_video_interpolate_macroblock(plm_video_t *self, plm_frame_t *s, int mot
 	plm_video_process_macroblock(self, s->cb.data, d->cb.data, motion_h / 2, motion_v / 2, 8, TRUE);
 }
 
-//
-// This method gets called a lot, so it needs to be as efficient as possible
-// The loop unrolling allows good compilers to turn them into efficient 64 and 128-bit loads
-// The pointer ugliness minimizes the amount of adds and address calculations per loop
-//
-#define PLM_BLOCK_COPY(DEST, DEST_INDEX, DEST_WIDTH, SOURCE_INDEX, SOURCE_WIDTH, BLOCK_SIZE, OP) \
-    do  { \
-       if (BLOCK_SIZE == 8) {     \
-       uint8_t *pS = &s[si]; \
-       uint8_t *pD = &d[di]; \
-         for (int y = 0; y < 8; y++)  {   \
-            uint32_t d0, d1; \
-            d0 = *(uint32_t *)pS; \
-            d1 = *(uint32_t *)&pS[4]; /* unroll loop */                                              \
-            *(uint32_t *)pD = d0; \
-            *(uint32_t *)&pD[4] = d1;                                      \
-            pS += SOURCE_WIDTH;     \
-            pD += DEST_WIDTH;         \
-        } \
-       } else { \
-            uint8_t *pS = &s[si]; \
-            uint8_t *pD = &d[di]; \
-         for (int y = 0; y < 16; y++) { \
-             uint32_t d0, d1, d2, d3; \
-             d0 = *(uint32_t *)pS; \
-             d1 = *(uint32_t *)&pS[4]; /* unroll loop */                                              \
-             d2 = *(uint32_t *)&pS[8]; /* Arm64 compiler converts this into a 128-bit load */ \
-             d3 = *(uint32_t *)&pS[12]; \
-             *(uint32_t *)pD = d0; \
-             *(uint32_t *)&pD[4] = d1;         \
-             *(uint32_t *)&pD[8] = d2; \
-             *(uint32_t *)&pD[12] = d3; \
-             pS += SOURCE_WIDTH; \
-             pD += DEST_WIDTH; \
-        } \
-       }  \
-} while (FALSE)
-
 #define PLM_BLOCK_SET(DEST, DEST_INDEX, DEST_WIDTH, SOURCE_INDEX, SOURCE_WIDTH, BLOCK_SIZE, OP) do { \
 	int dest_scan = DEST_WIDTH - BLOCK_SIZE; \
 	int source_scan = SOURCE_WIDTH - BLOCK_SIZE; \
@@ -3516,6 +3358,173 @@ void plm_video_interpolate_macroblock(plm_video_t *self, plm_frame_t *s, int mot
 		SOURCE_INDEX += source_scan; \
 		DEST_INDEX += dest_scan; \
 	}} while(FALSE)
+
+#ifdef PLM_HAVE_SIMD
+
+#if defined(PLM_HAVE_SSE2)
+	static inline __m128i plm_simd_load_u8(const uint8_t *p, int width) {
+		return width == 16
+			? _mm_loadu_si128((const __m128i *)p)
+			: _mm_loadl_epi64((const __m128i *)p);
+	}
+	static inline void plm_simd_store_u8(uint8_t *p, __m128i v, int width) {
+		if (width == 16) { _mm_storeu_si128((__m128i *)p, v); }
+		else { _mm_storel_epi64((__m128i *)p, v); }
+	}
+	static inline __m128i plm_simd_avg2_u8(__m128i a, __m128i b) {
+		return _mm_avg_epu8(a, b);
+	}
+	static inline __m128i plm_simd_avg4_u8(__m128i a, __m128i b, __m128i c, __m128i e) {
+		__m128i zero = _mm_setzero_si128();
+		__m128i alo = _mm_unpacklo_epi8(a, zero), ahi = _mm_unpackhi_epi8(a, zero);
+		__m128i blo = _mm_unpacklo_epi8(b, zero), bhi = _mm_unpackhi_epi8(b, zero);
+		__m128i clo = _mm_unpacklo_epi8(c, zero), chi = _mm_unpackhi_epi8(c, zero);
+		__m128i elo = _mm_unpacklo_epi8(e, zero), ehi = _mm_unpackhi_epi8(e, zero);
+		__m128i two = _mm_set1_epi16(2);
+		__m128i sumlo = _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(_mm_add_epi16(alo, blo), _mm_add_epi16(clo, elo)), two), 2);
+		__m128i sumhi = _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(_mm_add_epi16(ahi, bhi), _mm_add_epi16(chi, ehi)), two), 2);
+		return _mm_packus_epi16(sumlo, sumhi);
+	}
+#elif defined(PLM_HAVE_WASM_SIMD)
+	static inline v128_t plm_simd_load_u8(const uint8_t *p, int width) {
+		return width == 16 ? wasm_v128_load(p) : wasm_v128_load64_zero(p);
+	}
+	static inline void plm_simd_store_u8(uint8_t *p, v128_t v, int width) {
+		if (width == 16) { wasm_v128_store(p, v); return; }
+		uint64_t lo = (uint64_t)wasm_i64x2_extract_lane(v, 0);
+		for (int i = 0; i < 8; i++) { p[i] = (uint8_t)(lo >> (8 * i)); }
+	}
+	static inline v128_t plm_simd_avg2_u8(v128_t a, v128_t b) {
+		return wasm_u8x16_avgr(a, b);
+	}
+	static inline v128_t plm_simd_avg4_u8(v128_t a, v128_t b, v128_t c, v128_t e) {
+		v128_t alo = wasm_u16x8_extend_low_u8x16(a), ahi = wasm_u16x8_extend_high_u8x16(a);
+		v128_t blo = wasm_u16x8_extend_low_u8x16(b), bhi = wasm_u16x8_extend_high_u8x16(b);
+		v128_t clo = wasm_u16x8_extend_low_u8x16(c), chi = wasm_u16x8_extend_high_u8x16(c);
+		v128_t elo = wasm_u16x8_extend_low_u8x16(e), ehi = wasm_u16x8_extend_high_u8x16(e);
+		v128_t two = wasm_i16x8_splat(2);
+		v128_t sumlo = wasm_u16x8_shr(wasm_i16x8_add(wasm_i16x8_add(wasm_i16x8_add(alo, blo), wasm_i16x8_add(clo, elo)), two), 2);
+		v128_t sumhi = wasm_u16x8_shr(wasm_i16x8_add(wasm_i16x8_add(wasm_i16x8_add(ahi, bhi), wasm_i16x8_add(chi, ehi)), two), 2);
+		return wasm_u8x16_narrow_i16x8(sumlo, sumhi);
+	}
+#endif
+
+#if defined(PLM_HAVE_SSE2) || defined(PLM_HAVE_WASM_SIMD)
+void plm_video_process_macroblock_simd(
+	uint8_t *s, uint8_t *d,
+	int motion_h, int motion_v, int block_size, int interpolate,
+	unsigned int si, unsigned int di, int dw
+) {
+	int odd_h = (motion_h & 1) == 1;
+	int odd_v = (motion_v & 1) == 1;
+
+	for (int y = 0; y < block_size; y++) {
+		const uint8_t *srow = s + si + (unsigned)y * dw;
+		uint8_t *drow = d + di + (unsigned)y * dw;
+
+		#if defined(PLM_HAVE_SSE2)
+			__m128i result;
+		#else
+			v128_t result;
+		#endif
+
+		if (!odd_h && !odd_v) {
+			result = plm_simd_load_u8(srow, block_size);
+		}
+		else if (odd_h && !odd_v) {
+			result = plm_simd_avg2_u8(plm_simd_load_u8(srow, block_size), plm_simd_load_u8(srow + 1, block_size));
+		}
+		else if (!odd_h && odd_v) {
+			result = plm_simd_avg2_u8(plm_simd_load_u8(srow, block_size), plm_simd_load_u8(srow + dw, block_size));
+		}
+		else {
+			result = plm_simd_avg4_u8(
+				plm_simd_load_u8(srow, block_size), plm_simd_load_u8(srow + 1, block_size),
+				plm_simd_load_u8(srow + dw, block_size), plm_simd_load_u8(srow + dw + 1, block_size));
+		}
+
+		if (interpolate) {
+			result = plm_simd_avg2_u8(result, plm_simd_load_u8(drow, block_size));
+		}
+
+		plm_simd_store_u8(drow, result, block_size);
+	}
+}
+#elif defined(PLM_HAVE_NEON)
+static inline uint8x16_t plm_simd_avg4_u8_16(uint8x16_t a, uint8x16_t b, uint8x16_t c, uint8x16_t e) {
+	uint16x8_t alo = vmovl_u8(vget_low_u8(a)), ahi = vmovl_u8(vget_high_u8(a));
+	uint16x8_t blo = vmovl_u8(vget_low_u8(b)), bhi = vmovl_u8(vget_high_u8(b));
+	uint16x8_t clo = vmovl_u8(vget_low_u8(c)), chi = vmovl_u8(vget_high_u8(c));
+	uint16x8_t elo = vmovl_u8(vget_low_u8(e)), ehi = vmovl_u8(vget_high_u8(e));
+	uint16x8_t two = vdupq_n_u16(2);
+	uint16x8_t sumlo = vshrq_n_u16(vaddq_u16(vaddq_u16(alo, blo), vaddq_u16(vaddq_u16(clo, elo), two)), 2);
+	uint16x8_t sumhi = vshrq_n_u16(vaddq_u16(vaddq_u16(ahi, bhi), vaddq_u16(vaddq_u16(chi, ehi), two)), 2);
+	return vcombine_u8(vqmovn_u16(sumlo), vqmovn_u16(sumhi));
+}
+static inline uint8x8_t plm_simd_avg4_u8_8(uint8x8_t a, uint8x8_t b, uint8x8_t c, uint8x8_t e) {
+	uint16x8_t al = vmovl_u8(a), bl = vmovl_u8(b), cl = vmovl_u8(c), el = vmovl_u8(e);
+	uint16x8_t two = vdupq_n_u16(2);
+	uint16x8_t sum = vshrq_n_u16(vaddq_u16(vaddq_u16(al, bl), vaddq_u16(vaddq_u16(cl, el), two)), 2);
+	return vqmovn_u16(sum);
+}
+
+void plm_video_process_macroblock_simd(
+	uint8_t *s, uint8_t *d,
+	int motion_h, int motion_v, int block_size, int interpolate,
+	unsigned int si, unsigned int di, int dw
+) {
+	int odd_h = (motion_h & 1) == 1;
+	int odd_v = (motion_v & 1) == 1;
+
+	for (int y = 0; y < block_size; y++) {
+		const uint8_t *srow = s + si + (unsigned)y * dw;
+		uint8_t *drow = d + di + (unsigned)y * dw;
+
+		if (block_size == 16) {
+			uint8x16_t result;
+			if (!odd_h && !odd_v) {
+				result = vld1q_u8(srow);
+			}
+			else if (odd_h && !odd_v) {
+				result = vrhaddq_u8(vld1q_u8(srow), vld1q_u8(srow + 1));
+			}
+			else if (!odd_h && odd_v) {
+				result = vrhaddq_u8(vld1q_u8(srow), vld1q_u8(srow + dw));
+			}
+			else {
+				result = plm_simd_avg4_u8_16(
+					vld1q_u8(srow), vld1q_u8(srow + 1), vld1q_u8(srow + dw), vld1q_u8(srow + dw + 1));
+			}
+			if (interpolate) {
+				result = vrhaddq_u8(result, vld1q_u8(drow));
+			}
+			vst1q_u8(drow, result);
+		}
+		else {
+			uint8x8_t result;
+			if (!odd_h && !odd_v) {
+				result = vld1_u8(srow);
+			}
+			else if (odd_h && !odd_v) {
+				result = vrhadd_u8(vld1_u8(srow), vld1_u8(srow + 1));
+			}
+			else if (!odd_h && odd_v) {
+				result = vrhadd_u8(vld1_u8(srow), vld1_u8(srow + dw));
+			}
+			else {
+				result = plm_simd_avg4_u8_8(
+					vld1_u8(srow), vld1_u8(srow + 1), vld1_u8(srow + dw), vld1_u8(srow + dw + 1));
+			}
+			if (interpolate) {
+				result = vrhadd_u8(result, vld1_u8(drow));
+			}
+			vst1_u8(drow, result);
+		}
+	}
+}
+#endif
+
+#endif
 
 void plm_video_process_macroblock(
 	plm_video_t *self, uint8_t *s, uint8_t *d,
@@ -3530,314 +3539,47 @@ void plm_video_process_macroblock(
 
 	unsigned int si = ((self->mb_row * block_size) + vp) * dw + (self->mb_col * block_size) + hp;
 	unsigned int di = (self->mb_row * dw + self->mb_col) * block_size;
-	
+
 	unsigned int max_address = (dw * (self->mb_height * block_size - block_size + 1) - block_size);
 	if (si > max_address || di > max_address) {
 		return; // corrupt video
 	}
 
-	#define PLM_MB_CASE(INTERPOLATE, ODD_H, ODD_V, OP) \
-		case ((INTERPOLATE << 2) | (ODD_H << 1) | (ODD_V)): \
-			PLM_BLOCK_SET(d, di, dw, si, dw, block_size, OP); \
-			break
+	#ifdef PLM_HAVE_SIMD
+		PLM_UNUSED(odd_h);
+		PLM_UNUSED(odd_v);
+		plm_video_process_macroblock_simd(s, d, motion_h, motion_v, block_size, interpolate, si, di, dw);
+	#else
+		#define PLM_MB_CASE(INTERPOLATE, ODD_H, ODD_V, OP) \
+			case ((INTERPOLATE << 2) | (ODD_H << 1) | (ODD_V)): \
+				PLM_BLOCK_SET(d, di, dw, si, dw, block_size, OP); \
+				break
 
-	switch ((interpolate << 2) | (odd_h << 1) | (odd_v)) {
-//		PLM_MB_CASE(0, 0, 0, (s[si]));
-    case 0:
-        PLM_BLOCK_COPY(d, di, dw, si, dw, block_size, s[si]);
-        break;
-#if defined(__ARM_NEON)
-        case 1:
-            // 1x2 vertical averaging
-            s += si; d += di;
-            if (block_size == 8) {
-                uint8x8_t u88_a, u88_b;
-                uint16x8_t u168_ab;
-                u88_a = vld1_u8(s); // pre-load the first row
-                s += dw;
-                for (int y = 0; y<8; y++) {
-                    u88_b = vld1_u8(s);
-                    u168_ab = vaddl_u8(u88_a, u88_b); // vertical add of next line
-                    u88_a = vrshrn_n_u16(u168_ab, 1); // shift right with rounding
-                    vst1_u8(d, u88_a);
-                    u88_a = u88_b; // upper line becomes lower
-                    s += dw;
-                    d += dw;
-                }
-            } else { // 16
-                uint8x8_t u88;
-                uint8x16_t u816_a, u816_b;
-                uint16x8_t u168_L, u168_H;
-                u816_a = vld1q_u8(s); // pre-load the first row
-                s += dw;
-                for (int y = 0; y<16; y++) {
-                    u816_b = vld1q_u8(s);
-                    u168_L = vaddl_u8(vget_low_u8(u816_a), vget_low_u8(u816_b)); // vert add of next line
-                    u168_H = vaddl_u8(vget_high_u8(u816_a), vget_high_u8(u816_b));
-                    u88 = vrshrn_n_u16(u168_L, 1); // shift right with rounding
-                    vst1_u8(d, u88);
-                    u88 = vrshrn_n_u16(u168_H, 1);
-                    vst1_u8(d+8, u88);
-                    u816_a = u816_b; // upper line becomes lower
-                    s += dw;
-                    d += dw;
-                }
-            }
-            break;
-#elif defined(__SSE2__)
-		case 1:
-			// 1x2 vertical averaging
-            s += si; d += di;
-			if (block_size == 8) {
-				__m128i a, b, ab_lo, result;
-				a = _mm_loadl_epi64((__m128i*)s); // load 8 bytes
-				s += dw;
-				for (int y = 0; y < 8; y++) {
-					b = _mm_loadl_epi64((__m128i*)s);
-					// unpack to 16-bit
-					__m128i a16 = _mm_unpacklo_epi8(a, _mm_setzero_si128());
-					__m128i b16 = _mm_unpacklo_epi8(b, _mm_setzero_si128());
-					ab_lo = _mm_add_epi16(a16, b16);
-					// rounding shift right by 1
-					__m128i one = _mm_set1_epi16(1);
-					ab_lo = _mm_add_epi16(ab_lo, one);
-					ab_lo = _mm_srli_epi16(ab_lo, 1);
-					result = _mm_packus_epi16(ab_lo, _mm_setzero_si128());
-					_mm_storel_epi64((__m128i*)d, result);
-					a = b;
-					s += dw;
-					d += dw;
-				}
-			} else { // block_size == 16
-				__m128i a, b, a_lo, a_hi, b_lo, b_hi, sum_lo, sum_hi, result;
-				a = _mm_loadu_si128((__m128i*)s);
-				s += dw;
-				for (int y = 0; y < 16; y++) {
-					b = _mm_loadu_si128((__m128i*)s);
-					a_lo = _mm_unpacklo_epi8(a, _mm_setzero_si128());
-					a_hi = _mm_unpackhi_epi8(a, _mm_setzero_si128());
-					b_lo = _mm_unpacklo_epi8(b, _mm_setzero_si128());
-					b_hi = _mm_unpackhi_epi8(b, _mm_setzero_si128());
-					sum_lo = _mm_add_epi16(a_lo, b_lo);
-					sum_hi = _mm_add_epi16(a_hi, b_hi);
-					__m128i one = _mm_set1_epi16(1);
-					sum_lo = _mm_add_epi16(sum_lo, one);
-					sum_hi = _mm_add_epi16(sum_hi, one);
-					sum_lo = _mm_srli_epi16(sum_lo, 1);
-					sum_hi = _mm_srli_epi16(sum_hi, 1);
-					result = _mm_packus_epi16(sum_lo, sum_hi);
-					_mm_storeu_si128((__m128i*)d, result);
-					a = b;
-					s += dw;
-					d += dw;
-				}
-			}
-			break;
-#else
-		PLM_MB_CASE(0, 0, 1, (s[si] + s[si + dw] + 1) >> 1);
-#endif
-//            PLM_MB_CASE(0, 1, 0, (s[si] + s[si + 1] + 1) >> 1);
-        case 2: // 2x1 (horizontal) average of sample pairs
-        {
-            int dest_scan = dw - block_size;
-            int a, b;
-            s += si; d += di;
-            for (int y = 0; y < block_size; y++) {
-                a = s[0];
-                for (int x = 0; x < block_size; x++) {
-                    b = s[1];
-                    d[0] = (a+b+1)>>1;
-                    a = b;
-                    s++; d++;
-                } // for x
-                s += dest_scan;
-                d += dest_scan;
-            } // for y
-        }
-            break;
-//		PLM_MB_CASE(0, 1, 1, (s[si] + s[si + 1] + s[si + dw] + s[si + dw + 1] + 2) >> 2);
-        case 3: // 2x2 average
-        {
-#if defined(__ARM_NEON)
-            s += si; d += di;
-            if (block_size == 8) {
-                uint8x8_t u88_a1, u88_b1;
-                uint16x8_t u168_ab0, u168_ab1;
-                u88_a1 = vld1_u8(s); // pre-load the first row
-                u88_b1 = vld1_u8(s+1);
-                u168_ab0 = vaddl_u8(u88_a1, u88_b1); // horizontal add of current line
-                s += dw;
-                for (int y = 0; y<8; y++) {
-                    u88_a1 = vld1_u8(s);
-                    u88_b1 = vld1_u8(s+1);
-                    u168_ab1 = vaddl_u8(u88_a1, u88_b1); // horiz add of next line
-                    u168_ab0 = vaddq_u16(u168_ab0, u168_ab1); // vertical add
-                    u88_a1 = vrshrn_n_u16(u168_ab0, 2); // shift right with rounding
-                    vst1_u8(d, u88_a1);
-                    u168_ab0 = u168_ab1; // upper line becomes lower
-                    s += dw;
-                    d += dw;
-                }
-            } else { // 16
-                uint8x8_t u88;
-                uint8x16_t u816_a1, u816_b1;
-                uint16x8_t u168_ab0L, u168_ab0H, u168_ab1L, u168_ab1H;
-                u816_a1 = vld1q_u8(s); // pre-load the first row
-                u816_b1 = vld1q_u8(s+1);
-                u168_ab0L = vaddl_u8(vget_low_u8(u816_a1), vget_low_u8(u816_b1)); // horizontal add of current line
-                u168_ab0H = vaddl_u8(vget_high_u8(u816_a1), vget_high_u8(u816_b1));
-                s += dw;
-                for (int y = 0; y<16; y++) {
-                    u816_a1 = vld1q_u8(s);
-                    u816_b1 = vld1q_u8(s+1);
-                    u168_ab1L = vaddl_u8(vget_low_u8(u816_a1), vget_low_u8(u816_b1)); // horiz add of next line
-                    u168_ab1H = vaddl_u8(vget_high_u8(u816_a1), vget_high_u8(u816_b1));
-                    u168_ab0L = vaddq_u16(u168_ab0L, u168_ab1L); // vertical add
-                    u168_ab0H = vaddq_u16(u168_ab0H, u168_ab1H);
-                    u88 = vrshrn_n_u16(u168_ab0L, 2); // shift right with rounding
-                    vst1_u8(d, u88);
-                    u88 = vrshrn_n_u16(u168_ab0H, 2);
-                    vst1_u8(d+8, u88);
-                    u168_ab0L = u168_ab1L; // upper line becomes lower
-                    u168_ab0H = u168_ab1H;
-                    s += dw;
-                    d += dw;
-                }
-            }
-#elif defined(__SSE2__)
-			s += si; d += di;
-			__m128i zero = _mm_setzero_si128();
-			__m128i two = _mm_set1_epi16(2);
+		switch ((interpolate << 2) | (odd_h << 1) | (odd_v)) {
+			PLM_MB_CASE(0, 0, 0, (s[si]));
+			PLM_MB_CASE(0, 0, 1, (s[si] + s[si + dw] + 1) >> 1);
+			PLM_MB_CASE(0, 1, 0, (s[si] + s[si + 1] + 1) >> 1);
+			PLM_MB_CASE(0, 1, 1, (s[si] + s[si + 1] + s[si + dw] + s[si + dw + 1] + 2) >> 2);
 
-			if (block_size == 8) {
-				__m128i a1, b1, ab0, ab1, result;
-				a1 = _mm_loadl_epi64((__m128i*)s);
-				b1 = _mm_loadl_epi64((__m128i*)(s + 1));
-				__m128i a1_16 = _mm_unpacklo_epi8(a1, zero);
-				__m128i b1_16 = _mm_unpacklo_epi8(b1, zero);
-				ab0 = _mm_add_epi16(a1_16, b1_16);
-				s += dw;
+			PLM_MB_CASE(1, 0, 0, (d[di] + (s[si]) + 1) >> 1);
+			PLM_MB_CASE(1, 0, 1, (d[di] + ((s[si] + s[si + dw] + 1) >> 1) + 1) >> 1);
+			PLM_MB_CASE(1, 1, 0, (d[di] + ((s[si] + s[si + 1] + 1) >> 1) + 1) >> 1);
+			PLM_MB_CASE(1, 1, 1, (d[di] + ((s[si] + s[si + 1] + s[si + dw] + s[si + dw + 1] + 2) >> 2) + 1) >> 1);
+		}
 
-				for (int y = 0; y < 8; y++) {
-					a1 = _mm_loadl_epi64((__m128i*)s);
-					b1 = _mm_loadl_epi64((__m128i*)(s + 1));
-					a1_16 = _mm_unpacklo_epi8(a1, zero);
-					b1_16 = _mm_unpacklo_epi8(b1, zero);
-					ab1 = _mm_add_epi16(a1_16, b1_16);
-					ab0 = _mm_add_epi16(ab0, ab1);
-					ab0 = _mm_add_epi16(ab0, two);
-					ab0 = _mm_srli_epi16(ab0, 2);
-					result = _mm_packus_epi16(ab0, zero);
-					_mm_storel_epi64((__m128i*)d, result);
-					ab0 = ab1;
-					s += dw;
-					d += dw;
-				}
-			} else { // block_size == 16
-				__m128i a1, b1, a_lo, a_hi, b_lo, b_hi;
-				__m128i ab0L, ab0H, ab1L, ab1H, result;
-
-				a1 = _mm_loadu_si128((__m128i*)s);
-				b1 = _mm_loadu_si128((__m128i*)(s + 1));
-				a_lo = _mm_unpacklo_epi8(a1, zero);
-				a_hi = _mm_unpackhi_epi8(a1, zero);
-				b_lo = _mm_unpacklo_epi8(b1, zero);
-				b_hi = _mm_unpackhi_epi8(b1, zero);
-				ab0L = _mm_add_epi16(a_lo, b_lo);
-				ab0H = _mm_add_epi16(a_hi, b_hi);
-				s += dw;
-
-				for (int y = 0; y < 16; y++) {
-					a1 = _mm_loadu_si128((__m128i*)s);
-					b1 = _mm_loadu_si128((__m128i*)(s + 1));
-					a_lo = _mm_unpacklo_epi8(a1, zero);
-					a_hi = _mm_unpackhi_epi8(a1, zero);
-					b_lo = _mm_unpacklo_epi8(b1, zero);
-					b_hi = _mm_unpackhi_epi8(b1, zero);
-					ab1L = _mm_add_epi16(a_lo, b_lo);
-					ab1H = _mm_add_epi16(a_hi, b_hi);
-					ab0L = _mm_add_epi16(ab0L, ab1L);
-					ab0H = _mm_add_epi16(ab0H, ab1H);
-					ab0L = _mm_add_epi16(ab0L, two);
-					ab0H = _mm_add_epi16(ab0H, two);
-					ab0L = _mm_srli_epi16(ab0L, 2);
-					ab0H = _mm_srli_epi16(ab0H, 2);
-					result = _mm_packus_epi16(ab0L, ab0H);
-					_mm_storeu_si128((__m128i*)d, result);
-					ab0L = ab1L;
-					ab0H = ab1H;
-					s += dw;
-					d += dw;
-				}
-			}
-#else
-            int dest_scan = dw - block_size;
-            int a0, b0;
-            s += si; d += di;
-            for (int y = 0; y < block_size; y++) {
-                a0 = s[0] + s[dw];
-                for (int x = 0; x < block_size; x++) {
-                    b0 = s[1] + s[dw+1];
-                    d[0] = (a0+b0+2)>>2;
-                    a0 = b0;
-                    s++; d++;
-                } // for x
-                s += dest_scan;
-                d += dest_scan;
-            } // for y
-#endif // ARM_NEON
-        }
-            break;
-		PLM_MB_CASE(1, 0, 0, (d[di] + (s[si]) + 1) >> 1);
-		PLM_MB_CASE(1, 0, 1, (d[di] + ((s[si] + s[si + dw] + 1) >> 1) + 1) >> 1);
-		PLM_MB_CASE(1, 1, 0, (d[di] + ((s[si] + s[si + 1] + 1) >> 1) + 1) >> 1);
-		PLM_MB_CASE(1, 1, 1, (d[di] + ((s[si] + s[si + 1] + s[si + dw] + s[si + dw + 1] + 2) >> 2) + 1) >> 1);
-	}
-
-	#undef PLM_MB_CASE
+		#undef PLM_MB_CASE
+	#endif
 }
-
-//
-// Fast VLC decode of the DCT coefficients
-// The codes are 2-16 bits in length
-//
-uint16_t plm_read_dct_vlc_fast(plm_video_t *self)
-{
-    uint16_t u16Code;
-    plm_buffer_t *buf = self->buffer;
-    uint16_t *pTable = self->fast_vlc;
-    uint8_t *pLens = (uint8_t *)&pTable[2048];
-    int shift = (int)buf->bit_index;
-    int len, bits = shift & 7;
-    uint32_t c;
-    uint32_t *s;
-                
-    s = (uint32_t *)&buf->bytes[shift >> 3];
-    c = byte_swap_32(s[0]); // big endian bit stream
-    c >>= (16-bits); // prepare lower 16 bits
-    if (c & 0xfc00) { // short code
-        c = (c >> 6) & 0x3ff;
-    } else { // long code
-        c = (c & 0x3ff)+0x400;
-    }
-    u16Code = pTable[c];
-    len = pLens[c]; // true code length
-    shift += len;
-    buf->bit_index = shift;
-
-    return u16Code;
-} /* plm_read_dct_vlc_fast() */
 
 void plm_video_decode_block(plm_video_t *self, int block) {
 
 	int n = 0;
-    int level = 0;
-    uint8_t *quant_matrix;
+	uint8_t *quant_matrix;
 
 	// Decode DC coefficient of intra-coded blocks
 	if (self->macroblock_intra) {
-		int32_t predictor;
-		int32_t dct_size;
+		int predictor;
+		int dct_size;
 
 		// DC prediction
 		int plane_index = block > 3 ? block - 3 : 0;
@@ -3869,54 +3611,18 @@ void plm_video_decode_block(plm_video_t *self, int block) {
 	}
 	else {
 		quant_matrix = self->non_intra_quant_matrix;
-        // check for a run/level of 0/1 encoded as 1 bit; only for this situation of DC value
-        if (plm_buffer_peek_non_zero(self->buffer, 1)) {
-            self->buffer->bit_index++; // yes, it's the length 1 code
-            if (plm_buffer_read(self->buffer, 1))
-            {
-                level = -level;
-            }
-            // Dequantize, oddify, clip
-            level <<= 1;
-            level += (level < 0 ? -1 : 1);
-            level = (level * self->quantizer_scale * quant_matrix[0]) >> 4;
-            if ((level & 1) == 0)
-            {
-                level -= level > 0 ? 1 : -1;
-            }
-            if (level > 2047)
-            {
-                level = 2047;
-            }
-            else if (level < -2048)
-            {
-                level = -2048;
-            }
-            // Save premultiplied coefficient
-            self->block_data[0] = level * PLM_VIDEO_PREMULTIPLIER_MATRIX[0];
-            n = 1;
-        }
 	}
 
 	// Decode AC coefficients (+DC for non-intra)
+	int level = 0;
 	while (TRUE) {
 		int run = 0;
-        uint16_t coeff = plm_read_dct_vlc_fast(self);
-//        uint16_t coeff = (uint16_t)plm_buffer_read_vlc_uint(self->buffer, PLM_VIDEO_DCT_COEFF);
-//        if (coeff_new != coeff) {
-//            printf("mismatch: correct = 0x%04x, incorrect = 0x%04x\n", coeff, coeff_new);
-//        } else {
-//            printf("correct: 0x%04x\n", coeff_new);
-//        }
-//		if ((coeff == 0x0001) && (n > 0) && (plm_buffer_read(self->buffer, 1) == 0)) {
+		uint16_t coeff = plm_buffer_read_vlc_uint(self->buffer, PLM_VIDEO_DCT_COEFF);
+
+		if ((coeff == 0x0001) && (n > 0) && (plm_buffer_read(self->buffer, 1) == 0)) {
 			// end_of_block
-//			break;
-//		}
-        if (coeff == 0x0000) // EOB
-                {
-                        // end_of_block
-                        break;
-                }
+			break;
+		}
 		if (coeff == 0xffff) {
 			// escape
 			run = plm_buffer_read(self->buffer, 6);
@@ -3940,7 +3646,7 @@ void plm_video_decode_block(plm_video_t *self, int block) {
 		}
 
 		n += run;
-		if (n >= 64) {
+		if (n < 0 || n >= 64) {
 			return; // invalid
 		}
 
@@ -3989,304 +3695,344 @@ void plm_video_decode_block(plm_video_t *self, int block) {
 		di = ((self->mb_row * self->luma_width) << 2) + (self->mb_col << 3);
 	}
 
-	int32_t *s = self->block_data;
+	int *s = self->block_data;
 	int si = 0;
 	if (self->macroblock_intra) {
 		// Overwrite (no prediction)
-		if (n == 1) { // no A/C coefficients
-            uint32_t clamped = plm_clamp((s[0] + 128) >> 8);
-            uint32_t *d32 = (uint32_t *)&d[di];
-            //              PLM_BLOCK_SET(d, di, dw, si, 8, 8, clamped);
-            clamped = (clamped | clamped << 8); // make a 32-bit pattern
-            clamped = (clamped | clamped << 16);
-            for (int yy = 0; yy<8; yy++) {
-                d32[0] = d32[1] = clamped; // 8 copies per row
-                d32 += dw/4;
-            }
-            s[0] = 0;
-		} else {
-			plm_video_idct(s, n);
-#if defined(__ARM_NEON)
-            {
-				PLM_UNUSED(si);
-                // the source data is contiguous, the destination is not
-                int32x4_t in0_32, in1_32; // to hold 8 x uint32_t's which will get narrowed and clipped
-                uint16x8_t in0_16;
-                uint8x8_t in0_8;
-                d += di;
-                for (int yy=0; yy<8; yy++) { // do 8 rows of 8
-                    in0_32 = vld1q_s32(s);
-                    in1_32 = vld1q_s32(s+4);
-                    s += 8;
-                    in0_16 = vreinterpretq_u16_s16(vcombine_s16(vqmovn_s32(in0_32), vqmovn_s32(in1_32)));
-                    in0_8 = vqmovn_u16(in0_16); // narrow and clamp to uint8_t
-                    vst1_u8(d, in0_8);
-                    d += dw;
-                }
-            }
-#elif defined(__SSE2__)
-			{
-				PLM_UNUSED(si);
-				d += di;
-				for (int yy = 0; yy < 8; yy++) {
-					// Load 8 x int32_t
-					__m128i in0_32 = _mm_loadu_si128((__m128i*)s);
-					__m128i in1_32 = _mm_loadu_si128((__m128i*)(s + 4));
-					s += 8;
-
-					// Narrow to int16_t
-					__m128i in0_16 = _mm_packs_epi32(in0_32, in1_32);
-
-					// Narrow to uint8_t with saturation
-					__m128i in0_8 = _mm_packus_epi16(in0_16, _mm_setzero_si128());
-
-					// Store 8 bytes
-					_mm_storel_epi64((__m128i*)d, in0_8);
-					d += dw;
-				}
-			}
-#else
+		if (n == 1) {
+			int clamped = plm_clamp((s[0] + 128) >> 8);
+			PLM_BLOCK_SET(d, di, dw, si, 8, 8, clamped);
+			s[0] = 0;
+		}
+		else {
+			plm_video_idct(s);
 			PLM_BLOCK_SET(d, di, dw, si, 8, 8, plm_clamp(s[si]));
-#endif
 			memset(self->block_data, 0, sizeof(self->block_data));
 		}
 	}
 	else {
 		// Add data to the predicted macroblock
 		if (n == 1) {
-			int16_t value = (s[0] + 128) >> 8;
-#if defined(__ARM_NEON)
-            // The challenge is that the 'value' is a signed 8-bit number that needs to be added
-            // to an unsigned 8-bit value and then clamped to 8-bits unsigned again
-            {
-                int16x8_t i16_0, i16_value;
-                uint8x8_t u88;
-                d += di;
-                i16_value = vdupq_n_s16(value);
-                for (int yy=0; yy<8; yy++) {
-                    u88 = vld1_u8(d);
-                    i16_0 = (int16x8_t)vmovl_u8(u88);  // widen and cast to i16
-                    i16_0 = vaddq_s16(i16_value, i16_0); // add value to 8 slots
-                    u88 = vqmovun_s16(i16_0); // narrow to uint8_t again
-                    vst1_u8(d, u88);
-                    d += dw;
-                }
-            }
-#elif defined(__SSE2__)
-			{
-				__m128i zero = _mm_setzero_si128();
-				__m128i i16_value = _mm_set1_epi16((int16_t)value);
-				d += di;
-
-				for (int yy = 0; yy < 8; yy++) {
-					// Load 8 unsigned bytes
-					__m128i u88 = _mm_loadl_epi64((__m128i*)d);
-
-					// Widen to int16
-					__m128i i16_0 = _mm_unpacklo_epi8(u88, zero);
-
-					// Add signed value
-					i16_0 = _mm_add_epi16(i16_0, i16_value);
-
-					// Clamp and narrow to uint8
-					__m128i result = _mm_packus_epi16(i16_0, zero);
-
-					// Store back
-					_mm_storel_epi64((__m128i*)d, result);
-					d += dw;
-				}
-			}
-#else
+			int value = (s[0] + 128) >> 8;
 			PLM_BLOCK_SET(d, di, dw, si, 8, 8, plm_clamp(d[di] + value));
-#endif
 			s[0] = 0;
 		}
 		else {
-			plm_video_idct(s, n);
-#if defined(__ARM_NEON)
-            {
-                int16x8_t i16_s, i16_d;
-                int32x4_t i32_0, i32_1;
-                uint8x8_t u88;
-                d += di;
-                for (int yy=0; yy<8; yy++) {
-                    i32_0 = vld1q_s32(s);
-                    i32_1 = vld1q_s32(s+4);
-                    s += 8;
-                    u88 = vld1_u8(d);
-                    i16_s = vcombine_s16(vmovn_s32(i32_0), vmovn_s32(i32_1)); // narrow to i16
-                    i16_d = (int16x8_t)vmovl_u8(u88);  // widen and cast to i16
-                    i16_d = vaddq_s16(i16_s, i16_d); // add dest to source
-                    u88 = vqmovun_s16(i16_d); // narrow to uint8_t again
-                    vst1_u8(d, u88);
-                    d += dw;
-                }
-            }
-#elif defined(__SSE2__)
-			{
-				__m128i zero = _mm_setzero_si128();
-				d += di;
-
-				for (int yy = 0; yy < 8; yy++) {
-					// Load 8 x int32_t
-					__m128i i32_0 = _mm_loadu_si128((__m128i*)s);
-					__m128i i32_1 = _mm_loadu_si128((__m128i*)(s + 4));
-					s += 8;
-
-					// Narrow to int16_t
-					__m128i i16_lo = _mm_packs_epi32(i32_0, zero);
-					__m128i i16_hi = _mm_packs_epi32(i32_1, zero);
-					__m128i i16_s = _mm_unpacklo_epi64(i16_lo, i16_hi); // combine to 8 x int16_t
-
-					// Load 8 x uint8_t and widen to int16_t
-					__m128i u88 = _mm_loadl_epi64((__m128i*)d);
-					__m128i i16_d = _mm_unpacklo_epi8(u88, zero);
-
-					// Add and clamp
-					__m128i i16_sum = _mm_add_epi16(i16_s, i16_d);
-					__m128i result = _mm_packus_epi16(i16_sum, zero);
-
-					// Store result
-					_mm_storel_epi64((__m128i*)d, result);
-					d += dw;
-				}
-			}
-#else
+			plm_video_idct(s);
 			PLM_BLOCK_SET(d, di, dw, si, 8, 8, plm_clamp(d[di] + s[si]));
-#endif
 			memset(self->block_data, 0, sizeof(self->block_data));
 		}
 	}
 }
 
-void plm_video_idct(int32_t *block, int iMaxIndex) {
+#ifdef PLM_HAVE_SIMD
+
+static inline void plm_idct_transpose8x8(int *block) {
+	for (int r = 0; r < 8; r++) {
+		for (int c = r + 1; c < 8; c++) {
+			int tmp = block[r * 8 + c];
+			block[r * 8 + c] = block[c * 8 + r];
+			block[c * 8 + r] = tmp;
+		}
+	}
+}
+
+#if defined(PLM_HAVE_SSE2)
+
+static inline __m128i plm_simd_mullo_epi32(__m128i a, __m128i b) {
+	__m128i tmp1 = _mm_mul_epu32(a, b);
+	__m128i tmp2 = _mm_mul_epu32(_mm_srli_si128(a, 4), _mm_srli_si128(b, 4));
+	return _mm_unpacklo_epi32(
+		_mm_shuffle_epi32(tmp1, _MM_SHUFFLE(0, 0, 2, 0)),
+		_mm_shuffle_epi32(tmp2, _MM_SHUFFLE(0, 0, 2, 0))
+	);
+}
+static inline __m128i plm_idct_scale_round8(__m128i v) {
+	return _mm_srai_epi32(_mm_add_epi32(v, _mm_set1_epi32(128)), 8);
+}
+
+static inline void plm_idct_pass4(int *block, int col_base, int round) {
+	__m128i r0 = _mm_loadu_si128((__m128i *)(block + 0 * 8 + col_base));
+	__m128i r1 = _mm_loadu_si128((__m128i *)(block + 1 * 8 + col_base));
+	__m128i r2 = _mm_loadu_si128((__m128i *)(block + 2 * 8 + col_base));
+	__m128i r3 = _mm_loadu_si128((__m128i *)(block + 3 * 8 + col_base));
+	__m128i r4 = _mm_loadu_si128((__m128i *)(block + 4 * 8 + col_base));
+	__m128i r5 = _mm_loadu_si128((__m128i *)(block + 5 * 8 + col_base));
+	__m128i r6 = _mm_loadu_si128((__m128i *)(block + 6 * 8 + col_base));
+	__m128i r7 = _mm_loadu_si128((__m128i *)(block + 7 * 8 + col_base));
+
+	__m128i c473 = _mm_set1_epi32(473);
+	__m128i c196 = _mm_set1_epi32(196);
+	__m128i c362 = _mm_set1_epi32(362);
+
+	__m128i b1 = r4;
+	__m128i b3 = _mm_add_epi32(r2, r6);
+	__m128i b4 = _mm_sub_epi32(r5, r3);
+	__m128i tmp1 = _mm_add_epi32(r1, r7);
+	__m128i tmp2 = _mm_add_epi32(r3, r5);
+	__m128i b6 = _mm_sub_epi32(r1, r7);
+	__m128i b7 = _mm_add_epi32(tmp1, tmp2);
+	__m128i m0 = r0;
+
+	__m128i x4 = _mm_sub_epi32(
+		plm_idct_scale_round8(_mm_sub_epi32(plm_simd_mullo_epi32(b6, c473), plm_simd_mullo_epi32(b4, c196))), b7);
+	__m128i x0 = _mm_sub_epi32(x4, plm_idct_scale_round8(plm_simd_mullo_epi32(_mm_sub_epi32(tmp1, tmp2), c362)));
+	__m128i x1 = _mm_sub_epi32(m0, b1);
+	__m128i x2 = _mm_sub_epi32(plm_idct_scale_round8(plm_simd_mullo_epi32(_mm_sub_epi32(r2, r6), c362)), b3);
+	__m128i x3 = _mm_add_epi32(m0, b1);
+	__m128i y3 = _mm_add_epi32(x1, x2);
+	__m128i y4 = _mm_add_epi32(x3, b3);
+	__m128i y5 = _mm_sub_epi32(x1, x2);
+	__m128i y6 = _mm_sub_epi32(x3, b3);
+	__m128i y7 = _mm_sub_epi32(
+		_mm_sub_epi32(_mm_setzero_si128(), x0),
+		plm_idct_scale_round8(_mm_add_epi32(plm_simd_mullo_epi32(b4, c473), plm_simd_mullo_epi32(b6, c196))));
+
+	__m128i o0 = _mm_add_epi32(b7, y4);
+	__m128i o1 = _mm_add_epi32(x4, y3);
+	__m128i o2 = _mm_sub_epi32(y5, x0);
+	__m128i o3 = _mm_sub_epi32(y6, y7);
+	__m128i o4 = _mm_add_epi32(y6, y7);
+	__m128i o5 = _mm_add_epi32(x0, y5);
+	__m128i o6 = _mm_sub_epi32(y3, x4);
+	__m128i o7 = _mm_sub_epi32(y4, b7);
+
+	if (round) {
+		o0 = plm_idct_scale_round8(o0); o1 = plm_idct_scale_round8(o1);
+		o2 = plm_idct_scale_round8(o2); o3 = plm_idct_scale_round8(o3);
+		o4 = plm_idct_scale_round8(o4); o5 = plm_idct_scale_round8(o5);
+		o6 = plm_idct_scale_round8(o6); o7 = plm_idct_scale_round8(o7);
+	}
+
+	_mm_storeu_si128((__m128i *)(block + 0 * 8 + col_base), o0);
+	_mm_storeu_si128((__m128i *)(block + 1 * 8 + col_base), o1);
+	_mm_storeu_si128((__m128i *)(block + 2 * 8 + col_base), o2);
+	_mm_storeu_si128((__m128i *)(block + 3 * 8 + col_base), o3);
+	_mm_storeu_si128((__m128i *)(block + 4 * 8 + col_base), o4);
+	_mm_storeu_si128((__m128i *)(block + 5 * 8 + col_base), o5);
+	_mm_storeu_si128((__m128i *)(block + 6 * 8 + col_base), o6);
+	_mm_storeu_si128((__m128i *)(block + 7 * 8 + col_base), o7);
+}
+
+#elif defined(PLM_HAVE_NEON)
+
+static inline int32x4_t plm_idct_scale_round8(int32x4_t v) {
+	return vshrq_n_s32(vaddq_s32(v, vdupq_n_s32(128)), 8);
+}
+
+static inline void plm_idct_pass4(int *block, int col_base, int round) {
+	int32x4_t r0 = vld1q_s32(block + 0 * 8 + col_base);
+	int32x4_t r1 = vld1q_s32(block + 1 * 8 + col_base);
+	int32x4_t r2 = vld1q_s32(block + 2 * 8 + col_base);
+	int32x4_t r3 = vld1q_s32(block + 3 * 8 + col_base);
+	int32x4_t r4 = vld1q_s32(block + 4 * 8 + col_base);
+	int32x4_t r5 = vld1q_s32(block + 5 * 8 + col_base);
+	int32x4_t r6 = vld1q_s32(block + 6 * 8 + col_base);
+	int32x4_t r7 = vld1q_s32(block + 7 * 8 + col_base);
+
+	int32x4_t c473 = vdupq_n_s32(473);
+	int32x4_t c196 = vdupq_n_s32(196);
+	int32x4_t c362 = vdupq_n_s32(362);
+
+	int32x4_t b1 = r4;
+	int32x4_t b3 = vaddq_s32(r2, r6);
+	int32x4_t b4 = vsubq_s32(r5, r3);
+	int32x4_t tmp1 = vaddq_s32(r1, r7);
+	int32x4_t tmp2 = vaddq_s32(r3, r5);
+	int32x4_t b6 = vsubq_s32(r1, r7);
+	int32x4_t b7 = vaddq_s32(tmp1, tmp2);
+	int32x4_t m0 = r0;
+
+	int32x4_t x4 = vsubq_s32(
+		plm_idct_scale_round8(vsubq_s32(vmulq_s32(b6, c473), vmulq_s32(b4, c196))), b7);
+	int32x4_t x0 = vsubq_s32(x4, plm_idct_scale_round8(vmulq_s32(vsubq_s32(tmp1, tmp2), c362)));
+	int32x4_t x1 = vsubq_s32(m0, b1);
+	int32x4_t x2 = vsubq_s32(plm_idct_scale_round8(vmulq_s32(vsubq_s32(r2, r6), c362)), b3);
+	int32x4_t x3 = vaddq_s32(m0, b1);
+	int32x4_t y3 = vaddq_s32(x1, x2);
+	int32x4_t y4 = vaddq_s32(x3, b3);
+	int32x4_t y5 = vsubq_s32(x1, x2);
+	int32x4_t y6 = vsubq_s32(x3, b3);
+	int32x4_t y7 = vsubq_s32(
+		vsubq_s32(vdupq_n_s32(0), x0),
+		plm_idct_scale_round8(vaddq_s32(vmulq_s32(b4, c473), vmulq_s32(b6, c196))));
+
+	int32x4_t o0 = vaddq_s32(b7, y4);
+	int32x4_t o1 = vaddq_s32(x4, y3);
+	int32x4_t o2 = vsubq_s32(y5, x0);
+	int32x4_t o3 = vsubq_s32(y6, y7);
+	int32x4_t o4 = vaddq_s32(y6, y7);
+	int32x4_t o5 = vaddq_s32(x0, y5);
+	int32x4_t o6 = vsubq_s32(y3, x4);
+	int32x4_t o7 = vsubq_s32(y4, b7);
+
+	if (round) {
+		o0 = plm_idct_scale_round8(o0); o1 = plm_idct_scale_round8(o1);
+		o2 = plm_idct_scale_round8(o2); o3 = plm_idct_scale_round8(o3);
+		o4 = plm_idct_scale_round8(o4); o5 = plm_idct_scale_round8(o5);
+		o6 = plm_idct_scale_round8(o6); o7 = plm_idct_scale_round8(o7);
+	}
+
+	vst1q_s32(block + 0 * 8 + col_base, o0);
+	vst1q_s32(block + 1 * 8 + col_base, o1);
+	vst1q_s32(block + 2 * 8 + col_base, o2);
+	vst1q_s32(block + 3 * 8 + col_base, o3);
+	vst1q_s32(block + 4 * 8 + col_base, o4);
+	vst1q_s32(block + 5 * 8 + col_base, o5);
+	vst1q_s32(block + 6 * 8 + col_base, o6);
+	vst1q_s32(block + 7 * 8 + col_base, o7);
+}
+
+#elif defined(PLM_HAVE_WASM_SIMD)
+
+static inline v128_t plm_idct_scale_round8(v128_t v) {
+	return wasm_i32x4_shr(wasm_i32x4_add(v, wasm_i32x4_splat(128)), 8);
+}
+
+static inline void plm_idct_pass4(int *block, int col_base, int round) {
+	v128_t r0 = wasm_v128_load(block + 0 * 8 + col_base);
+	v128_t r1 = wasm_v128_load(block + 1 * 8 + col_base);
+	v128_t r2 = wasm_v128_load(block + 2 * 8 + col_base);
+	v128_t r3 = wasm_v128_load(block + 3 * 8 + col_base);
+	v128_t r4 = wasm_v128_load(block + 4 * 8 + col_base);
+	v128_t r5 = wasm_v128_load(block + 5 * 8 + col_base);
+	v128_t r6 = wasm_v128_load(block + 6 * 8 + col_base);
+	v128_t r7 = wasm_v128_load(block + 7 * 8 + col_base);
+
+	v128_t c473 = wasm_i32x4_splat(473);
+	v128_t c196 = wasm_i32x4_splat(196);
+	v128_t c362 = wasm_i32x4_splat(362);
+
+	v128_t b1 = r4;
+	v128_t b3 = wasm_i32x4_add(r2, r6);
+	v128_t b4 = wasm_i32x4_sub(r5, r3);
+	v128_t tmp1 = wasm_i32x4_add(r1, r7);
+	v128_t tmp2 = wasm_i32x4_add(r3, r5);
+	v128_t b6 = wasm_i32x4_sub(r1, r7);
+	v128_t b7 = wasm_i32x4_add(tmp1, tmp2);
+	v128_t m0 = r0;
+
+	v128_t x4 = wasm_i32x4_sub(
+		plm_idct_scale_round8(wasm_i32x4_sub(wasm_i32x4_mul(b6, c473), wasm_i32x4_mul(b4, c196))), b7);
+	v128_t x0 = wasm_i32x4_sub(x4, plm_idct_scale_round8(wasm_i32x4_mul(wasm_i32x4_sub(tmp1, tmp2), c362)));
+	v128_t x1 = wasm_i32x4_sub(m0, b1);
+	v128_t x2 = wasm_i32x4_sub(plm_idct_scale_round8(wasm_i32x4_mul(wasm_i32x4_sub(r2, r6), c362)), b3);
+	v128_t x3 = wasm_i32x4_add(m0, b1);
+	v128_t y3 = wasm_i32x4_add(x1, x2);
+	v128_t y4 = wasm_i32x4_add(x3, b3);
+	v128_t y5 = wasm_i32x4_sub(x1, x2);
+	v128_t y6 = wasm_i32x4_sub(x3, b3);
+	v128_t y7 = wasm_i32x4_sub(
+		wasm_i32x4_sub(wasm_i32x4_splat(0), x0),
+		plm_idct_scale_round8(wasm_i32x4_add(wasm_i32x4_mul(b4, c473), wasm_i32x4_mul(b6, c196))));
+
+	v128_t o0 = wasm_i32x4_add(b7, y4);
+	v128_t o1 = wasm_i32x4_add(x4, y3);
+	v128_t o2 = wasm_i32x4_sub(y5, x0);
+	v128_t o3 = wasm_i32x4_sub(y6, y7);
+	v128_t o4 = wasm_i32x4_add(y6, y7);
+	v128_t o5 = wasm_i32x4_add(x0, y5);
+	v128_t o6 = wasm_i32x4_sub(y3, x4);
+	v128_t o7 = wasm_i32x4_sub(y4, b7);
+
+	if (round) {
+		o0 = plm_idct_scale_round8(o0); o1 = plm_idct_scale_round8(o1);
+		o2 = plm_idct_scale_round8(o2); o3 = plm_idct_scale_round8(o3);
+		o4 = plm_idct_scale_round8(o4); o5 = plm_idct_scale_round8(o5);
+		o6 = plm_idct_scale_round8(o6); o7 = plm_idct_scale_round8(o7);
+	}
+
+	wasm_v128_store(block + 0 * 8 + col_base, o0);
+	wasm_v128_store(block + 1 * 8 + col_base, o1);
+	wasm_v128_store(block + 2 * 8 + col_base, o2);
+	wasm_v128_store(block + 3 * 8 + col_base, o3);
+	wasm_v128_store(block + 4 * 8 + col_base, o4);
+	wasm_v128_store(block + 5 * 8 + col_base, o5);
+	wasm_v128_store(block + 6 * 8 + col_base, o6);
+	wasm_v128_store(block + 7 * 8 + col_base, o7);
+}
+
+#endif
+
+#endif
+
+void plm_video_idct(int *block) {
+	#ifdef PLM_HAVE_SIMD
+		plm_idct_pass4(block, 0, FALSE);
+		plm_idct_pass4(block, 4, FALSE);
+
+		plm_idct_transpose8x8(block);
+
+		plm_idct_pass4(block, 0, TRUE);
+		plm_idct_pass4(block, 4, TRUE);
+
+		plm_idct_transpose8x8(block);
+	#else
 	int
 		b1, b3, b4, b6, b7, tmp1, tmp2, m0,
 		x0, x1, x2, x3, x4, y3, y4, y5, y6, y7;
 
-    if (iMaxIndex < 10) { // much simpler calculations when the matrix is mostly empty :)
-        // max column is 4th and max row is 4th (at least 3/4 of the matrix is empty)
-        // Transform columns
-        for (int i = 0; i < 4; ++i) { // only need to do 4 columns because the rest result in all 0's
-            b1 = 0; //block[4 * 8 + i];
-            b3 = block[2 * 8 + i]; // + block[6 * 8 + i];
-            b4 = 0/*block[5 * 8 + i]*/ - block[3 * 8 + i];
-            tmp1 = block[1 * 8 + i];// + block[7 * 8 + i];
-            tmp2 = block[3 * 8 + i];// + block[5 * 8 + i];
-            b6 = block[1 * 8 + i];// - block[7 * 8 + i];
-            b7 = tmp1 + tmp2;
-            m0 = block[0 * 8 + i];
-            x4 = ((b6 * 473 - b4 * 196 + 128) >> 8) - b7;
-            x0 = x4 - (((tmp1 - tmp2) * 362 + 128) >> 8);
-            x1 = m0 - b1;
-            x2 = (((block[2 * 8 + i] /* - block[6 * 8 + i] */) * 362  + 128) >> 8) - b3;
-            x3 = m0 + b1;
-            y3 = x1 + x2;
-            y4 = x3 + b3;
-            y5 = x1 - x2;
-            y6 = x3 - b3;
-            y7 = -x0 - ((b4 * 473 + b6 * 196 + 128) >> 8);
-            block[0 * 8 + i] = b7 + y4;
-            block[1 * 8 + i] = x4 + y3;
-            block[2 * 8 + i] = y5 - x0;
-            block[3 * 8 + i] = y6 - y7;
-            block[4 * 8 + i] = y6 + y7;
-            block[5 * 8 + i] = x0 + y5;
-            block[6 * 8 + i] = y3 - x4;
-            block[7 * 8 + i] = y4 - b7;
-        }
-        
-        // Transform rows
-        for (int i = 0; i < 64; i += 8) {
-            b1 = 0; //block[4 + i];
-            b3 = block[2 + i]; // + block[6 + i];
-            b4 = 0 /*block[5 + i] */ - block[3 + i];
-            tmp1 = block[1 + i]; // + block[7 + i];
-            tmp2 = block[3 + i]; // + block[5 + i];
-            b6 = block[1 + i]; // - block[7 + i];
-            b7 = tmp1 + tmp2;
-            m0 = block[0 + i];
-            x4 = ((b6 * 473 - b4 * 196 + 128) >> 8) - b7;
-            x0 = x4 - (((tmp1 - tmp2) * 362 + 128) >> 8);
-            x1 = m0 - b1;
-            x2 = (((block[2 + i] /* - block[6 + i] */) * 362 + 128) >> 8) - b3;
-            x3 = m0 + b1;
-            y3 = x1 + x2;
-            y4 = x3 + b3;
-            y5 = x1 - x2;
-            y6 = x3 - b3;
-            y7 = -x0 - ((b4 * 473 + b6 * 196 + 128) >> 8);
-            block[0 + i] = (b7 + y4 + 128) >> 8;
-            block[1 + i] = (x4 + y3 + 128) >> 8;
-            block[2 + i] = (y5 - x0 + 128) >> 8;
-            block[3 + i] = (y6 - y7 + 128) >> 8;
-            block[4 + i] = (y6 + y7 + 128) >> 8;
-            block[5 + i] = (x0 + y5 + 128) >> 8;
-            block[6 + i] = (y3 - x4 + 128) >> 8;
-            block[7 + i] = (y4 - b7 + 128) >> 8;
-        }
-    } else {
-        // Transform columns
-        for (int i = 0; i < 8; ++i) {
-            b1 = block[4 * 8 + i];
-            b3 = block[2 * 8 + i] + block[6 * 8 + i];
-            b4 = block[5 * 8 + i] - block[3 * 8 + i];
-            tmp1 = block[1 * 8 + i] + block[7 * 8 + i];
-            tmp2 = block[3 * 8 + i] + block[5 * 8 + i];
-            b6 = block[1 * 8 + i] - block[7 * 8 + i];
-            b7 = tmp1 + tmp2;
-            m0 = block[0 * 8 + i];
-            x4 = ((b6 * 473 - b4 * 196 + 128) >> 8) - b7;
-            x0 = x4 - (((tmp1 - tmp2) * 362 + 128) >> 8);
-            x1 = m0 - b1;
-            x2 = (((block[2 * 8 + i] - block[6 * 8 + i]) * 362 + 128) >> 8) - b3;
-            x3 = m0 + b1;
-            y3 = x1 + x2;
-            y4 = x3 + b3;
-            y5 = x1 - x2;
-            y6 = x3 - b3;
-            y7 = -x0 - ((b4 * 473 + b6 * 196 + 128) >> 8);
-            block[0 * 8 + i] = b7 + y4;
-            block[1 * 8 + i] = x4 + y3;
-            block[2 * 8 + i] = y5 - x0;
-            block[3 * 8 + i] = y6 - y7;
-            block[4 * 8 + i] = y6 + y7;
-            block[5 * 8 + i] = x0 + y5;
-            block[6 * 8 + i] = y3 - x4;
-            block[7 * 8 + i] = y4 - b7;
-        }
-        
-        // Transform rows
-        for (int i = 0; i < 64; i += 8) {
-            b1 = block[4 + i];
-            b3 = block[2 + i] + block[6 + i];
-            b4 = block[5 + i] - block[3 + i];
-            tmp1 = block[1 + i] + block[7 + i];
-            tmp2 = block[3 + i] + block[5 + i];
-            b6 = block[1 + i] - block[7 + i];
-            b7 = tmp1 + tmp2;
-            m0 = block[0 + i];
-            x4 = ((b6 * 473 - b4 * 196 + 128) >> 8) - b7;
-            x0 = x4 - (((tmp1 - tmp2) * 362 + 128) >> 8);
-            x1 = m0 - b1;
-            x2 = (((block[2 + i] - block[6 + i]) * 362 + 128) >> 8) - b3;
-            x3 = m0 + b1;
-            y3 = x1 + x2;
-            y4 = x3 + b3;
-            y5 = x1 - x2;
-            y6 = x3 - b3;
-            y7 = -x0 - ((b4 * 473 + b6 * 196 + 128) >> 8);
-            block[0 + i] = (b7 + y4 + 128) >> 8;
-            block[1 + i] = (x4 + y3 + 128) >> 8;
-            block[2 + i] = (y5 - x0 + 128) >> 8;
-            block[3 + i] = (y6 - y7 + 128) >> 8;
-            block[4 + i] = (y6 + y7 + 128) >> 8;
-            block[5 + i] = (x0 + y5 + 128) >> 8;
-            block[6 + i] = (y3 - x4 + 128) >> 8;
-            block[7 + i] = (y4 - b7 + 128) >> 8;
-        }
-    } // full transform
-} /* plm_video_idct() */
+	// Transform columns
+	for (int i = 0; i < 8; ++i) {
+		b1 = block[4 * 8 + i];
+		b3 = block[2 * 8 + i] + block[6 * 8 + i];
+		b4 = block[5 * 8 + i] - block[3 * 8 + i];
+		tmp1 = block[1 * 8 + i] + block[7 * 8 + i];
+		tmp2 = block[3 * 8 + i] + block[5 * 8 + i];
+		b6 = block[1 * 8 + i] - block[7 * 8 + i];
+		b7 = tmp1 + tmp2;
+		m0 = block[0 * 8 + i];
+		x4 = ((b6 * 473 - b4 * 196 + 128) >> 8) - b7;
+		x0 = x4 - (((tmp1 - tmp2) * 362 + 128) >> 8);
+		x1 = m0 - b1;
+		x2 = (((block[2 * 8 + i] - block[6 * 8 + i]) * 362 + 128) >> 8) - b3;
+		x3 = m0 + b1;
+		y3 = x1 + x2;
+		y4 = x3 + b3;
+		y5 = x1 - x2;
+		y6 = x3 - b3;
+		y7 = -x0 - ((b4 * 473 + b6 * 196 + 128) >> 8);
+		block[0 * 8 + i] = b7 + y4;
+		block[1 * 8 + i] = x4 + y3;
+		block[2 * 8 + i] = y5 - x0;
+		block[3 * 8 + i] = y6 - y7;
+		block[4 * 8 + i] = y6 + y7;
+		block[5 * 8 + i] = x0 + y5;
+		block[6 * 8 + i] = y3 - x4;
+		block[7 * 8 + i] = y4 - b7;
+	}
+
+	// Transform rows
+	for (int i = 0; i < 64; i += 8) {
+		b1 = block[4 + i];
+		b3 = block[2 + i] + block[6 + i];
+		b4 = block[5 + i] - block[3 + i];
+		tmp1 = block[1 + i] + block[7 + i];
+		tmp2 = block[3 + i] + block[5 + i];
+		b6 = block[1 + i] - block[7 + i];
+		b7 = tmp1 + tmp2;
+		m0 = block[0 + i];
+		x4 = ((b6 * 473 - b4 * 196 + 128) >> 8) - b7;
+		x0 = x4 - (((tmp1 - tmp2) * 362 + 128) >> 8);
+		x1 = m0 - b1;
+		x2 = (((block[2 + i] - block[6 + i]) * 362 + 128) >> 8) - b3;
+		x3 = m0 + b1;
+		y3 = x1 + x2;
+		y4 = x3 + b3;
+		y5 = x1 - x2;
+		y6 = x3 - b3;
+		y7 = -x0 - ((b4 * 473 + b6 * 196 + 128) >> 8);
+		block[0 + i] = (b7 + y4 + 128) >> 8;
+		block[1 + i] = (x4 + y3 + 128) >> 8;
+		block[2 + i] = (y5 - x0 + 128) >> 8;
+		block[3 + i] = (y6 - y7 + 128) >> 8;
+		block[4 + i] = (y6 + y7 + 128) >> 8;
+		block[5 + i] = (x0 + y5 + 128) >> 8;
+		block[6 + i] = (y3 - x4 + 128) >> 8;
+		block[7 + i] = (y4 - b7 + 128) >> 8;
+	}
+	#endif
+}
 
 // YCbCr conversion following the BT.601 standard:
 // https://infogalactic.com/info/YCbCr#ITU-R_BT.601_conversion
@@ -4296,6 +4042,224 @@ void plm_video_idct(int32_t *block, int iMaxIndex) {
 	dest[d_index + DEST_OFFSET + RI] = plm_clamp(y + r); \
 	dest[d_index + DEST_OFFSET + GI] = plm_clamp(y - g); \
 	dest[d_index + DEST_OFFSET + BI] = plm_clamp(y + b);
+
+#ifdef PLM_HAVE_SIMD
+
+#if defined(PLM_HAVE_SSE2)
+	static inline __m128i plm_simd_widen_u8x4(const uint8_t *p) {
+		int32_t v;
+		memcpy(&v, p, 4);
+		__m128i b32 = _mm_cvtsi32_si128(v);
+		__m128i zero = _mm_setzero_si128();
+		__m128i w16 = _mm_unpacklo_epi8(b32, zero);
+		return _mm_unpacklo_epi16(w16, zero);
+	}
+
+	static void plm_simd_y_transform_row(const uint8_t *ysrc, int *ydst, int count) {
+		int i = 0;
+		__m128i c16 = _mm_set1_epi32(16);
+		__m128i c76309 = _mm_set1_epi32(76309);
+		for (; i + 4 <= count; i += 4) {
+			__m128i v = plm_simd_widen_u8x4(ysrc + i);
+			v = _mm_sub_epi32(v, c16);
+			v = plm_simd_mullo_epi32(v, c76309);
+			v = _mm_srai_epi32(v, 16);
+			_mm_storeu_si128((__m128i *)(ydst + i), v);
+		}
+		for (; i < count; i++) {
+			ydst[i] = ((int)ysrc[i] - 16) * 76309 >> 16;
+		}
+	}
+
+	static void plm_simd_chroma_table_row(
+		const uint8_t *crsrc, const uint8_t *cbsrc,
+		int *rtab, int *gtab, int *btab, int count
+	) {
+		int i = 0;
+		__m128i c128 = _mm_set1_epi32(128);
+		__m128i c104597 = _mm_set1_epi32(104597);
+		__m128i c25674 = _mm_set1_epi32(25674);
+		__m128i c53278 = _mm_set1_epi32(53278);
+		__m128i c132201 = _mm_set1_epi32(132201);
+		for (; i + 4 <= count; i += 4) {
+			__m128i cr = _mm_sub_epi32(plm_simd_widen_u8x4(crsrc + i), c128);
+			__m128i cb = _mm_sub_epi32(plm_simd_widen_u8x4(cbsrc + i), c128);
+			__m128i r = _mm_srai_epi32(plm_simd_mullo_epi32(cr, c104597), 16);
+			__m128i g = _mm_srai_epi32(
+				_mm_add_epi32(plm_simd_mullo_epi32(cb, c25674), plm_simd_mullo_epi32(cr, c53278)), 16);
+			__m128i b = _mm_srai_epi32(plm_simd_mullo_epi32(cb, c132201), 16);
+			_mm_storeu_si128((__m128i *)(rtab + i), r);
+			_mm_storeu_si128((__m128i *)(gtab + i), g);
+			_mm_storeu_si128((__m128i *)(btab + i), b);
+		}
+		for (; i < count; i++) {
+			int cr = (int)crsrc[i] - 128;
+			int cb = (int)cbsrc[i] - 128;
+			rtab[i] = (cr * 104597) >> 16;
+			gtab[i] = (cb * 25674 + cr * 53278) >> 16;
+			btab[i] = (cb * 132201) >> 16;
+		}
+	}
+#elif defined(PLM_HAVE_NEON)
+	static void plm_simd_y_transform_row(const uint8_t *ysrc, int *ydst, int count) {
+		int i = 0;
+		int16x8_t c16 = vdupq_n_s16(16);
+		int32x4_t c76309 = vdupq_n_s32(76309);
+		for (; i + 8 <= count; i += 8) {
+			int16x8_t widened = vreinterpretq_s16_u16(vmovl_u8(vld1_u8(ysrc + i)));
+			widened = vsubq_s16(widened, c16);
+			int32x4_t lo = vmulq_s32(vmovl_s16(vget_low_s16(widened)), c76309);
+			int32x4_t hi = vmulq_s32(vmovl_s16(vget_high_s16(widened)), c76309);
+			vst1q_s32(ydst + i, vshrq_n_s32(lo, 16));
+			vst1q_s32(ydst + i + 4, vshrq_n_s32(hi, 16));
+		}
+		for (; i < count; i++) {
+			ydst[i] = ((int)ysrc[i] - 16) * 76309 >> 16;
+		}
+	}
+
+	static void plm_simd_chroma_table_row(
+		const uint8_t *crsrc, const uint8_t *cbsrc,
+		int *rtab, int *gtab, int *btab, int count
+	) {
+		int i = 0;
+		int16x8_t c128 = vdupq_n_s16(128);
+		int32x4_t c104597 = vdupq_n_s32(104597);
+		int32x4_t c25674 = vdupq_n_s32(25674);
+		int32x4_t c53278 = vdupq_n_s32(53278);
+		int32x4_t c132201 = vdupq_n_s32(132201);
+		for (; i + 8 <= count; i += 8) {
+			int16x8_t cr16 = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(vld1_u8(crsrc + i))), c128);
+			int16x8_t cb16 = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(vld1_u8(cbsrc + i))), c128);
+			int32x4_t crlo = vmovl_s16(vget_low_s16(cr16)), crhi = vmovl_s16(vget_high_s16(cr16));
+			int32x4_t cblo = vmovl_s16(vget_low_s16(cb16)), cbhi = vmovl_s16(vget_high_s16(cb16));
+			vst1q_s32(rtab + i,     vshrq_n_s32(vmulq_s32(crlo, c104597), 16));
+			vst1q_s32(rtab + i + 4, vshrq_n_s32(vmulq_s32(crhi, c104597), 16));
+			vst1q_s32(gtab + i,
+				vshrq_n_s32(vaddq_s32(vmulq_s32(cblo, c25674), vmulq_s32(crlo, c53278)), 16));
+			vst1q_s32(gtab + i + 4,
+				vshrq_n_s32(vaddq_s32(vmulq_s32(cbhi, c25674), vmulq_s32(crhi, c53278)), 16));
+			vst1q_s32(btab + i,     vshrq_n_s32(vmulq_s32(cblo, c132201), 16));
+			vst1q_s32(btab + i + 4, vshrq_n_s32(vmulq_s32(cbhi, c132201), 16));
+		}
+		for (; i < count; i++) {
+			int cr = (int)crsrc[i] - 128;
+			int cb = (int)cbsrc[i] - 128;
+			rtab[i] = (cr * 104597) >> 16;
+			gtab[i] = (cb * 25674 + cr * 53278) >> 16;
+			btab[i] = (cb * 132201) >> 16;
+		}
+	}
+#elif defined(PLM_HAVE_WASM_SIMD)
+	static void plm_simd_y_transform_row(const uint8_t *ysrc, int *ydst, int count) {
+		int i = 0;
+		v128_t c16 = wasm_i32x4_splat(16);
+		v128_t c76309 = wasm_i32x4_splat(76309);
+		for (; i + 16 <= count; i += 16) {
+			v128_t bytes = wasm_v128_load(ysrc + i);
+			v128_t lo16 = wasm_u16x8_extend_low_u8x16(bytes);
+			v128_t hi16 = wasm_u16x8_extend_high_u8x16(bytes);
+			v128_t v0 = wasm_u32x4_extend_low_u16x8(lo16);
+			v128_t v1 = wasm_u32x4_extend_high_u16x8(lo16);
+			v128_t v2 = wasm_u32x4_extend_low_u16x8(hi16);
+			v128_t v3 = wasm_u32x4_extend_high_u16x8(hi16);
+			wasm_v128_store(ydst + i,      wasm_i32x4_shr(wasm_i32x4_mul(wasm_i32x4_sub(v0, c16), c76309), 16));
+			wasm_v128_store(ydst + i + 4,  wasm_i32x4_shr(wasm_i32x4_mul(wasm_i32x4_sub(v1, c16), c76309), 16));
+			wasm_v128_store(ydst + i + 8,  wasm_i32x4_shr(wasm_i32x4_mul(wasm_i32x4_sub(v2, c16), c76309), 16));
+			wasm_v128_store(ydst + i + 12, wasm_i32x4_shr(wasm_i32x4_mul(wasm_i32x4_sub(v3, c16), c76309), 16));
+		}
+		for (; i < count; i++) {
+			ydst[i] = ((int)ysrc[i] - 16) * 76309 >> 16;
+		}
+	}
+
+	static void plm_simd_chroma_table_row(
+		const uint8_t *crsrc, const uint8_t *cbsrc,
+		int *rtab, int *gtab, int *btab, int count
+	) {
+		int i = 0;
+		v128_t c128 = wasm_i32x4_splat(128);
+		v128_t c104597 = wasm_i32x4_splat(104597);
+		v128_t c25674 = wasm_i32x4_splat(25674);
+		v128_t c53278 = wasm_i32x4_splat(53278);
+		v128_t c132201 = wasm_i32x4_splat(132201);
+		for (; i + 16 <= count; i += 16) {
+			v128_t crb = wasm_v128_load(crsrc + i);
+			v128_t cbb = wasm_v128_load(cbsrc + i);
+			v128_t cr_lo16 = wasm_u16x8_extend_low_u8x16(crb);
+			v128_t cr_hi16 = wasm_u16x8_extend_high_u8x16(crb);
+			v128_t cb_lo16 = wasm_u16x8_extend_low_u8x16(cbb);
+			v128_t cb_hi16 = wasm_u16x8_extend_high_u8x16(cbb);
+			v128_t crv[4], cbv[4];
+			crv[0] = wasm_u32x4_extend_low_u16x8(cr_lo16);  cbv[0] = wasm_u32x4_extend_low_u16x8(cb_lo16);
+			crv[1] = wasm_u32x4_extend_high_u16x8(cr_lo16);  cbv[1] = wasm_u32x4_extend_high_u16x8(cb_lo16);
+			crv[2] = wasm_u32x4_extend_low_u16x8(cr_hi16);  cbv[2] = wasm_u32x4_extend_low_u16x8(cb_hi16);
+			crv[3] = wasm_u32x4_extend_high_u16x8(cr_hi16);  cbv[3] = wasm_u32x4_extend_high_u16x8(cb_hi16);
+			for (int k = 0; k < 4; k++) {
+				v128_t cr = wasm_i32x4_sub(crv[k], c128);
+				v128_t cb = wasm_i32x4_sub(cbv[k], c128);
+				v128_t r = wasm_i32x4_shr(wasm_i32x4_mul(cr, c104597), 16);
+				v128_t g = wasm_i32x4_shr(
+					wasm_i32x4_add(wasm_i32x4_mul(cb, c25674), wasm_i32x4_mul(cr, c53278)), 16);
+				v128_t b = wasm_i32x4_shr(wasm_i32x4_mul(cb, c132201), 16);
+				wasm_v128_store(rtab + i + k * 4, r);
+				wasm_v128_store(gtab + i + k * 4, g);
+				wasm_v128_store(btab + i + k * 4, b);
+			}
+		}
+		for (; i < count; i++) {
+			int cr = (int)crsrc[i] - 128;
+			int cb = (int)cbsrc[i] - 128;
+			rtab[i] = (cr * 104597) >> 16;
+			gtab[i] = (cb * 25674 + cr * 53278) >> 16;
+			btab[i] = (cb * 132201) >> 16;
+		}
+	}
+#endif
+
+#define PLM_DEFINE_FRAME_CONVERT_FUNCTION(NAME, BYTES_PER_PIXEL, RI, GI, BI) \
+	void NAME(plm_frame_t *frame, uint8_t *dest, int stride) { \
+		int cols = frame->width >> 1; \
+		int rows = frame->height >> 1; \
+		int yw = frame->y.width; \
+		int cw = frame->cb.width; \
+		int *ytmp0 = (int *)PLM_MALLOC(sizeof(int) * yw); \
+		int *ytmp1 = (int *)PLM_MALLOC(sizeof(int) * yw); \
+		int *rtab = (int *)PLM_MALLOC(sizeof(int) * cols); \
+		int *gtab = (int *)PLM_MALLOC(sizeof(int) * cols); \
+		int *btab = (int *)PLM_MALLOC(sizeof(int) * cols); \
+		for (int row = 0; row < rows; row++) { \
+			int c_index = row * cw; \
+			int y_index = row * 2 * yw; \
+			int d_index = row * 2 * stride; \
+			plm_simd_y_transform_row(frame->y.data + y_index, ytmp0, yw); \
+			plm_simd_y_transform_row(frame->y.data + y_index + yw, ytmp1, yw); \
+			plm_simd_chroma_table_row(frame->cr.data + c_index, frame->cb.data + c_index, rtab, gtab, btab, cols); \
+			for (int col = 0; col < cols; col++) { \
+				int r = rtab[col], g = gtab[col], b = btab[col]; \
+				int dd = d_index + col * 2 * BYTES_PER_PIXEL; \
+				dest[dd + RI] = plm_clamp(ytmp0[2 * col] + r); \
+				dest[dd + GI] = plm_clamp(ytmp0[2 * col] - g); \
+				dest[dd + BI] = plm_clamp(ytmp0[2 * col] + b); \
+				dest[dd + BYTES_PER_PIXEL + RI] = plm_clamp(ytmp0[2 * col + 1] + r); \
+				dest[dd + BYTES_PER_PIXEL + GI] = plm_clamp(ytmp0[2 * col + 1] - g); \
+				dest[dd + BYTES_PER_PIXEL + BI] = plm_clamp(ytmp0[2 * col + 1] + b); \
+				dest[dd + stride + RI] = plm_clamp(ytmp1[2 * col] + r); \
+				dest[dd + stride + GI] = plm_clamp(ytmp1[2 * col] - g); \
+				dest[dd + stride + BI] = plm_clamp(ytmp1[2 * col] + b); \
+				dest[dd + stride + BYTES_PER_PIXEL + RI] = plm_clamp(ytmp1[2 * col + 1] + r); \
+				dest[dd + stride + BYTES_PER_PIXEL + GI] = plm_clamp(ytmp1[2 * col + 1] - g); \
+				dest[dd + stride + BYTES_PER_PIXEL + BI] = plm_clamp(ytmp1[2 * col + 1] + b); \
+			} \
+		} \
+		PLM_FREE(ytmp0); \
+		PLM_FREE(ytmp1); \
+		PLM_FREE(rtab); \
+		PLM_FREE(gtab); \
+		PLM_FREE(btab); \
+	}
+
+#else
 
 #define PLM_DEFINE_FRAME_CONVERT_FUNCTION(NAME, BYTES_PER_PIXEL, RI, GI, BI) \
 	void NAME(plm_frame_t *frame, uint8_t *dest, int stride) { \
@@ -4324,6 +4288,8 @@ void plm_video_idct(int32_t *block, int iMaxIndex) {
 			} \
 		} \
 	}
+
+#endif
 
 PLM_DEFINE_FRAME_CONVERT_FUNCTION(plm_frame_to_rgb,  3, 0, 1, 2)
 PLM_DEFINE_FRAME_CONVERT_FUNCTION(plm_frame_to_bgr,  3, 2, 1, 0)
@@ -4667,7 +4633,7 @@ plm_samples_t *plm_audio_decode(plm_audio_t *self) {
 }
 
 int plm_audio_find_frame_sync(plm_audio_t *self) {
-	uint32_t i;
+	size_t i;
 	for (i = self->buffer->bit_index >> 3; i < self->buffer->length-1; i++) {
 		if (
 			self->buffer->bytes[i] == 0xFF &&
@@ -4682,7 +4648,7 @@ int plm_audio_find_frame_sync(plm_audio_t *self) {
 }
 
 int plm_audio_decode_header(plm_audio_t *self) {
-	if (!plm_buffer_has(self->buffer, 64)) {
+	if (!plm_buffer_has(self->buffer, 48)) {
 		return 0;
 	}
 
@@ -4901,20 +4867,17 @@ void plm_audio_decode_frame(plm_audio_t *self) {
 					}
 
 					// Output samples
-// multiply by the inverse is much faster on a computer
-#define AUDIO_INVERSE 1.0f / 2147418112.0f
 					#ifdef PLM_AUDIO_SEPARATE_CHANNELS
 						float *out_channel = ch == 0
 							? self->samples.left
 							: self->samples.right;
 						for (int j = 0; j < 32; j++) {
-                            out_channel[out_pos + j] = self->U[j] * AUDIO_INVERSE;
-//							out_channel[out_pos + j] = self->U[j] / 2147418112.0f;
+							out_channel[out_pos + j] = self->U[j] / -1090519040.0f;
 						}
 					#else
 						for (int j = 0; j < 32; j++) {
 							self->samples.interleaved[((out_pos + j) << 1) + ch] = 
-                            self->U[j] * AUDIO_INVERSE; // / 2147418112.0f;
+								self->U[j] / -1090519040.0f;
 						}
 					#endif
 				} // End of synthesis channel loop

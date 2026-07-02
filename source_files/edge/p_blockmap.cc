@@ -29,7 +29,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "dm_defs.h"
 #include "dm_state.h"
 #include "epi.h"
@@ -894,7 +894,7 @@ float PathInterceptVector(DividingLine *v2, DividingLine *v1)
 
     float den = (v1->delta_y * v2->delta_x) - (v1->delta_x * v2->delta_y);
 
-    if (AlmostEquals(den, 0.0f))
+    if (epi::AlmostEquals(den, 0.0f))
         return 0; // parallel
 
     float num = (v1->x - v2->x) * v1->delta_y + (v2->y - v1->y) * v1->delta_x;
@@ -1051,10 +1051,10 @@ bool PathTraverse(float x1, float y1, float x2, float y2, int flags, bool (*func
     intercepts.clear();
 
     // don't side exactly on a line
-    if (AlmostEquals(fmod(x1 - blockmap_origin_x, kBlockmapUnitSize), 0.0))
+    if (epi::AlmostEquals(fmod(x1 - blockmap_origin_x, kBlockmapUnitSize), 0.0))
         x1 += 0.1f;
 
-    if (AlmostEquals(fmod(y1 - blockmap_origin_y, kBlockmapUnitSize), 0.0))
+    if (epi::AlmostEquals(fmod(y1 - blockmap_origin_y, kBlockmapUnitSize), 0.0))
         y1 += 0.1f;
 
     trace.x       = x1;

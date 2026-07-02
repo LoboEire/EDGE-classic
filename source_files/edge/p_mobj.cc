@@ -53,7 +53,7 @@
 
 #include <list>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "con_main.h"
 #include "dm_defs.h"
 #include "dm_state.h"
@@ -352,7 +352,7 @@ static bool CorpseShouldSlide(MapObject *mo)
 
     ComputeThingGap(mo, mo->subsector_->sector, mo->z, &floor, &ceil, floor_slope_z, ceiling_slope_z);
 
-    return (!AlmostEquals(mo->floor_z_, floor));
+    return (!epi::AlmostEquals(mo->floor_z_, floor));
 }
 
 //
@@ -494,7 +494,7 @@ static void ResurrectRespawn(MapObject *mobj)
     mobj->health_         = mobj->spawn_health_;
 
     mobj->visibility_ = info->translucency_;
-    if (!AlmostEquals(mobj->alpha_, 1.0f))
+    if (!epi::AlmostEquals(mobj->alpha_, 1.0f))
         mobj->target_visibility_ = mobj->alpha_;
     mobj->move_count_ = 0; // -ACB- 1998/08/03 Don't head off in any direction
 
@@ -1176,7 +1176,7 @@ static void P_XYMovement(MapObject *mo, const RegionProperties *props)
                 mo->momentum_.X = mo->momentum_.Y = 0;
             }
         }
-    } while (!AlmostEquals(xmove, 0.0f) || !AlmostEquals(ymove, 0.0f)); //while (xmove || ymove);
+    } while (!epi::AlmostEquals(xmove, 0.0f) || !epi::AlmostEquals(ymove, 0.0f)); //while (xmove || ymove);
 
     if ((mo->extended_flags_ & kExtendedFlagNoFriction) || (mo->flags_ & kMapObjectFlagSkullFly))
         return;
@@ -1198,7 +1198,7 @@ static void P_XYMovement(MapObject *mo, const RegionProperties *props)
     //
     float friction;
 
-    if (!AlmostEquals(mo->z, mo->floor_z_) && (mo->z > mo->floor_z_) && !(mo->on_ladder_ >= 0) &&
+    if (!epi::AlmostEquals(mo->z, mo->floor_z_) && (mo->z > mo->floor_z_) && !(mo->on_ladder_ >= 0) &&
         !(mo->player_ && mo->player_->powers_[kPowerTypeJetpack] > 0) && !mo->on_slope_)
     {
         // apply drag when airborne
@@ -1214,7 +1214,7 @@ static void P_XYMovement(MapObject *mo, const RegionProperties *props)
 
     // when we are confident that a mikoportal is being used, do not apply
     // friction or drag
-    if (!AlmostEquals(mo->floor_z_, -32768.0f) || AlmostEquals(mo->momentum_.Z, 0.0f))
+    if (!epi::AlmostEquals(mo->floor_z_, -32768.0f) || epi::AlmostEquals(mo->momentum_.Z, 0.0f))
     {
         mo->momentum_.X *= friction;
         mo->momentum_.Y *= friction;
@@ -1305,7 +1305,7 @@ static void P_ZMovement(MapObject *mo, const RegionProperties *props)
     if (mo->z <= mo->floor_z_)
     {
         // Test for mikoportal
-        if (AlmostEquals(mo->floor_z_, -32768.0f))
+        if (epi::AlmostEquals(mo->floor_z_, -32768.0f))
         {
             mo->z = mo->ceiling_z_ - mo->height_;
             if (TryMove(mo, mo->x, mo->y))
@@ -1386,7 +1386,7 @@ static void P_ZMovement(MapObject *mo, const RegionProperties *props)
             //       is missed by CheckRelativeThingCallback).  FIXME: more
             //       kludge.
 
-            if (mo->below_object_ && AlmostEquals(mo->floor_z_, mo->below_object_->z + mo->below_object_->height_)
+            if (mo->below_object_ && epi::AlmostEquals(mo->floor_z_, mo->below_object_->z + mo->below_object_->height_)
                 && (mo->below_object_->flags_ & kMapObjectFlagShootable) && (mo->source_ != mo->below_object_))
             {
                 if (MissileContact(mo, mo->below_object_) < 0 || (mo->extended_flags_ & kExtendedFlagTunnel))
@@ -1472,7 +1472,7 @@ static void P_ZMovement(MapObject *mo, const RegionProperties *props)
 
         if ((mo->flags_ & kMapObjectFlagMissile) && !(mo->flags_ & kMapObjectFlagNoClip))
         {
-            if (mo->above_object_ && AlmostEquals(mo->ceiling_z_, mo->above_object_->z) &&
+            if (mo->above_object_ && epi::AlmostEquals(mo->ceiling_z_, mo->above_object_->z) &&
                 (mo->above_object_->flags_ & kMapObjectFlagShootable) && (mo->source_ != mo->above_object_))
             {
                 if (MissileContact(mo, mo->above_object_) < 0 || (mo->extended_flags_ & kExtendedFlagTunnel))
@@ -1591,8 +1591,8 @@ static void P_MobjThinker(MapObject *mobj)
     }
 
     // handle SKULLFLY attacks
-    if ((mobj->flags_ & kMapObjectFlagSkullFly) && AlmostEquals(mobj->momentum_.X, 0.0f) &&
-        AlmostEquals(mobj->momentum_.Y, 0.0f))
+    if ((mobj->flags_ & kMapObjectFlagSkullFly) && epi::AlmostEquals(mobj->momentum_.X, 0.0f) &&
+        epi::AlmostEquals(mobj->momentum_.Y, 0.0f))
     {
         // the skull slammed into something
         mobj->flags_ &= ~kMapObjectFlagSkullFly;
@@ -1686,7 +1686,7 @@ static void P_MobjThinker(MapObject *mobj)
                 (!(mobj->info_->extended_flags_ & kExtendedFlagMonster) &&
                  (props->special->damage_.only_affects_ & epi::BitSetFromChar('O'))))
             {
-                if (AlmostEquals(mobj->z, mobj->floor_z_) || (props->special->special_flags_ & kSectorFlagWholeRegion))
+                if (epi::AlmostEquals(mobj->z, mobj->floor_z_) || (props->special->special_flags_ & kSectorFlagWholeRegion))
                     DamageMapObject(mobj, nullptr, nullptr, props->special->damage_.nominal_, &props->special->damage_,
                                     false);
             }
@@ -1695,11 +1695,11 @@ static void P_MobjThinker(MapObject *mobj)
 
     if (mobj->subsector_->sector->floor_vertex_slope)
     {
-        if (AlmostEquals(mobj->old_z_, mobj->old_floor_z_))
+        if (epi::AlmostEquals(mobj->old_z_, mobj->old_floor_z_))
             mobj->on_slope_ = true;
     }
 
-    if (!AlmostEquals(mobj->momentum_.X, 0.0f) || !AlmostEquals(mobj->momentum_.Y, 0.0f) || mobj->player_)
+    if (!epi::AlmostEquals(mobj->momentum_.X, 0.0f) || !epi::AlmostEquals(mobj->momentum_.Y, 0.0f) || mobj->player_)
     {
         P_XYMovement(mobj, props);
 
@@ -1707,7 +1707,7 @@ static void P_MobjThinker(MapObject *mobj)
             return;
     }
 
-    if ((!AlmostEquals(mobj->z, mobj->floor_z_)) || !AlmostEquals(mobj->momentum_.Z, 0.0f)) //  || mobj->ride_em)
+    if ((!epi::AlmostEquals(mobj->z, mobj->floor_z_)) || !epi::AlmostEquals(mobj->momentum_.Z, 0.0f)) //  || mobj->ride_em)
     {
         P_ZMovement(mobj, props);
 
@@ -2354,12 +2354,12 @@ FlatDefinition *P_IsThingOnLiquidFloor(MapObject *thing)
         Extrafloor *liquid_checker      = thing->subsector_->sector->bottom_liquid;
         for (Extrafloor *ef = floor_checker; ef; ef = ef->higher)
         {
-            if (AlmostEquals(player_floor_height, ef->top_height))
+            if (epi::AlmostEquals(player_floor_height, ef->top_height))
                 current_flatdef = flatdefs.Find(ef->extrafloor_line->front_sector->floor.image->name_.c_str());
         }
         for (Extrafloor *ef = liquid_checker; ef; ef = ef->higher)
         {
-            if (AlmostEquals(player_floor_height, ef->top_height))
+            if (epi::AlmostEquals(player_floor_height, ef->top_height))
                 current_flatdef = flatdefs.Find(ef->extrafloor_line->front_sector->floor.image->name_.c_str());
         }
         // if (!current_flatdef)
@@ -2387,7 +2387,7 @@ bool HitLiquidFloor(MapObject *thing)
     // don't splash if landing on the edge above water/lava/etc....
     if (thing->subsector_->sector->floor_vertex_slope && thing->z > thing->floor_z_)
         return false;
-    else if (!AlmostEquals(thing->floor_z_, thing->subsector_->sector->floor_height))
+    else if (!epi::AlmostEquals(thing->floor_z_, thing->subsector_->sector->floor_height))
         return false;
 
     FlatDefinition *current_flatdef = P_IsThingOnLiquidFloor(thing);

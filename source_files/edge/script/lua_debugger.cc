@@ -28,7 +28,7 @@
 #include <string.h>
 
 #include "epi.h"
-#include "lua.hpp"
+#include "minilua.h"
 #include "w_files.h"
 
 static int luaopen_debugger(lua_State *lua)

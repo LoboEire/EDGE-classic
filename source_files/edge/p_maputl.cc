@@ -38,7 +38,7 @@
 #include <algorithm>
 #include <vector>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "dm_defs.h"
 #include "dm_state.h"
 #include "epi.h"
@@ -95,12 +95,12 @@ float ApproximateSlope(float dx, float dy, float dz)
 
 void ComputeIntersection(DividingLine *div, float x1, float y1, float x2, float y2, float *ix, float *iy)
 {
-    if (AlmostEquals(div->delta_x, 0.0f))
+    if (epi::AlmostEquals(div->delta_x, 0.0f))
     {
         *ix = div->x;
         *iy = y1 + (y2 - y1) * (div->x - x1) / (x2 - x1);
     }
-    else if (AlmostEquals(div->delta_y, 0.0f))
+    else if (epi::AlmostEquals(div->delta_y, 0.0f))
     {
         *iy = div->y;
         *ix = x1 + (x2 - x1) * (div->y - y1) / (y2 - y1);
@@ -128,10 +128,10 @@ int PointOnDividingLineSide(float x, float y, DividingLine *div)
     float dx, dy;
     float left, right;
 
-    if (AlmostEquals(div->delta_x, 0.0f))
+    if (epi::AlmostEquals(div->delta_x, 0.0f))
         return ((x <= div->x) ^ (div->delta_y > 0)) ? 0 : 1;
 
-    if (AlmostEquals(div->delta_y, 0.0f))
+    if (epi::AlmostEquals(div->delta_y, 0.0f))
         return ((y <= div->y) ^ (div->delta_x < 0)) ? 0 : 1;
 
     dx = x - div->x;
@@ -165,7 +165,7 @@ int PointOnDividingLineThick(float x, float y, DividingLine *div, float div_len,
     float dx, dy;
     float left, right;
 
-    if (AlmostEquals(div->delta_x, 0.0f))
+    if (epi::AlmostEquals(div->delta_x, 0.0f))
     {
         if (fabs(x - div->x) <= thickness)
             return 2;
@@ -173,7 +173,7 @@ int PointOnDividingLineThick(float x, float y, DividingLine *div, float div_len,
         return ((x < div->x) ^ (div->delta_y > 0)) ? 0 : 1;
     }
 
-    if (AlmostEquals(div->delta_y, 0.0f))
+    if (epi::AlmostEquals(div->delta_y, 0.0f))
     {
         if (fabs(y - div->y) <= thickness)
             return 2;
@@ -262,7 +262,7 @@ int BoxOnDividingLineSide(const float *tmbox, DividingLine *div)
     int p1 = 0;
     int p2 = 0;
 
-    if (AlmostEquals(div->delta_y, 0.0f))
+    if (epi::AlmostEquals(div->delta_y, 0.0f))
     {
         p1 = tmbox[kBoundingBoxTop] > div->y;
         p2 = tmbox[kBoundingBoxBottom] > div->y;
@@ -273,7 +273,7 @@ int BoxOnDividingLineSide(const float *tmbox, DividingLine *div)
             p2 ^= 1;
         }
     }
-    else if (AlmostEquals(div->delta_x, 0.0f))
+    else if (epi::AlmostEquals(div->delta_x, 0.0f))
     {
         p1 = tmbox[kBoundingBoxRight] < div->x;
         p2 = tmbox[kBoundingBoxLeft] < div->x;
@@ -569,10 +569,10 @@ float ComputeThingGap(MapObject *thing, Sector *sec, float z, float *f, float *c
 
     temp_num = GapConstruct(temp_gaps, sec, thing, floor_slope_z, ceiling_slope_z);
 
-    if (AlmostEquals(z, kOnFloorZ))
+    if (epi::AlmostEquals(z, kOnFloorZ))
         z = sec->floor_height;
 
-    if (AlmostEquals(z, kOnCeilingZ))
+    if (epi::AlmostEquals(z, kOnCeilingZ))
         z = sec->ceiling_height - thing->height_;
 
     temp_num = FindThingGap(temp_gaps, temp_num, z, z + thing->height_);

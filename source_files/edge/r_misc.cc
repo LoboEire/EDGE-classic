@@ -30,7 +30,7 @@
 
 #include <math.h>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "am_map.h"
 #include "dm_defs.h"
 #include "dm_state.h"
@@ -147,7 +147,7 @@ BAMAngle PointToAngle(float x1, float y1, float x, float y, bool precise)
 
     if (precise)
     {
-        return (AlmostEquals(x, 0.0f) && AlmostEquals(y, 0.0f)) ? 0 : epi::BAMFromDegrees(atan2(y, x) * (180 / HMM_PI));
+        return (epi::AlmostEquals(x, 0.0f) && epi::AlmostEquals(y, 0.0f)) ? 0 : epi::BAMFromDegrees(atan2(y, x) * (180 / HMM_PI));
     }
 
     return epi::BAMFromDegrees(ApproximateAtan2(y, x) * (180 / HMM_PI));
@@ -164,9 +164,9 @@ float PointToDistance(float x1, float y1, float x2, float y2)
     dx = (float)fabs(x2 - x1);
     dy = (float)fabs(y2 - y1);
 
-    if (AlmostEquals(dx, 0.0f))
+    if (epi::AlmostEquals(dx, 0.0f))
         return dy;
-    else if (AlmostEquals(dy, 0.0f))
+    else if (epi::AlmostEquals(dy, 0.0f))
         return dx;
 
     if (dy > dx)

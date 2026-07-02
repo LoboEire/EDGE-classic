@@ -42,7 +42,7 @@
 
 #include "p_action.h"
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "con_main.h"
 #include "dm_defs.h"
 #include "dm_state.h"
@@ -1082,7 +1082,7 @@ void BringCorpseToLife(MapObject *corpse)
     corpse->hyper_flags_       = info->hyper_flags_;
     corpse->target_visibility_ = info->translucency_;
     // UDMF check
-    if (!AlmostEquals(corpse->alpha_, 1.0f))
+    if (!epi::AlmostEquals(corpse->alpha_, 1.0f))
         corpse->target_visibility_ = corpse->alpha_;
     corpse->tag_ = corpse->spawnpoint_.tag;
     corpse->tid_ = corpse->spawnpoint_.tid;
@@ -1596,7 +1596,7 @@ void A_DamageExplosion(MapObject *object)
 
     // -AJA- 2004/09/27: new EXPLODE_RADIUS command (overrides normal calc)
     float radius = object->info_->explode_radius_;
-    if (AlmostEquals(radius, 0.0f))
+    if (epi::AlmostEquals(radius, 0.0f))
         radius = damage;
 
     RadiusAttack(object, object->source_, radius, damage, &object->info_->explode_damage_, false);
@@ -1622,7 +1622,7 @@ void A_Thrust(MapObject *object)
 #endif
 
     float radius = object->info_->explode_radius_;
-    if (AlmostEquals(radius, 0.0f))
+    if (epi::AlmostEquals(radius, 0.0f))
         radius = damage;
 
     RadiusAttack(object, object->source_, radius, damage, &object->info_->explode_damage_, true);
@@ -1739,7 +1739,7 @@ static MapObject *DoLaunchProjectile(MapObject *source, float tx, float ty, floa
     MapObject *projectile     = nullptr;
 
     if (cur_source_sec->sink_depth > 0 && !cur_source_sec->extrafloor_used && !cur_source_sec->height_sector &&
-        AlmostEquals(source->z, cur_source_sec->floor_height))
+        epi::AlmostEquals(source->z, cur_source_sec->floor_height))
         projz -= (source->height_ * 0.5 * cur_source_sec->sink_depth);
 
     if (attack->flags_ & kAttackFlagOffsetsLast)
@@ -1754,7 +1754,7 @@ static MapObject *DoLaunchProjectile(MapObject *source, float tx, float ty, floa
 
         float yoffset;
 
-        if (!AlmostEquals(attack->yoffset_, 0.0f))
+        if (!epi::AlmostEquals(attack->yoffset_, 0.0f))
             yoffset = attack->yoffset_;
         else
             yoffset = source->radius_ - 0.5f;
@@ -1787,7 +1787,7 @@ static MapObject *DoLaunchProjectile(MapObject *source, float tx, float ty, floa
             Sector *cur_target_sec = target->subsector_->sector;
 
             if (cur_target_sec->sink_depth > 0 && !cur_target_sec->extrafloor_used && !cur_target_sec->height_sector &&
-                AlmostEquals(target->z, cur_target_sec->floor_height))
+                epi::AlmostEquals(target->z, cur_target_sec->floor_height))
                 tz -= (target->height_ * 0.5 * cur_target_sec->sink_depth);
         }
 
@@ -1817,7 +1817,7 @@ static MapObject *DoLaunchProjectile(MapObject *source, float tx, float ty, floa
             Sector *cur_target_sec = target->subsector_->sector;
 
             if (cur_target_sec->sink_depth > 0 && !cur_target_sec->extrafloor_used && !cur_target_sec->height_sector &&
-                AlmostEquals(target->z, cur_target_sec->floor_height))
+                epi::AlmostEquals(target->z, cur_target_sec->floor_height))
                 tz -= (target->height_ * 0.5 * cur_target_sec->sink_depth);
         }
 
@@ -1827,7 +1827,7 @@ static MapObject *DoLaunchProjectile(MapObject *source, float tx, float ty, floa
 
         float yoffset;
 
-        if (!AlmostEquals(attack->yoffset_, 0.0f))
+        if (!epi::AlmostEquals(attack->yoffset_, 0.0f))
             yoffset = attack->yoffset_;
         else
             yoffset = source->radius_ - 0.5f;
@@ -2165,7 +2165,7 @@ int MissileContact(MapObject *object, MapObject *target)
     {
         // Berserk handling
         if (source->player_ && object->current_attack_ &&
-            !AlmostEquals(source->player_->powers_[kPowerTypeBerserk], 0.0f))
+            !epi::AlmostEquals(source->player_->powers_[kPowerTypeBerserk], 0.0f))
         {
             damage *= object->current_attack_->berserk_mul_;
         }
@@ -2578,7 +2578,7 @@ static void ShotAttack(MapObject *mo)
         float damage;
         EDGE_DAMAGE_COMPUTE(damage, &attack->damage_);
 
-        if (mo->player_ && !AlmostEquals(mo->player_->powers_[kPowerTypeBerserk], 0.0f))
+        if (mo->player_ && !epi::AlmostEquals(mo->player_->powers_[kPowerTypeBerserk], 0.0f))
             damage *= attack->berserk_mul_;
 
         LineAttack(mo, angle, range, slope, damage, &attack->damage_, attack->puff_, attack->blood_);
@@ -2629,7 +2629,7 @@ static void SprayAttack(MapObject *mo)
         float damage;
         EDGE_DAMAGE_COMPUTE(damage, &attack->damage_);
 
-        if (mo->player_ && !AlmostEquals(mo->player_->powers_[kPowerTypeBerserk], 0.0f))
+        if (mo->player_ && !epi::AlmostEquals(mo->player_->powers_[kPowerTypeBerserk], 0.0f))
             damage *= attack->berserk_mul_;
 
         if (damage)
@@ -2648,7 +2648,7 @@ static void DoMeleeAttack(MapObject *mo)
 
     // -KM- 1998/11/25 Berserk ability
     // -ACB- 2004/02/04 Only zero is off
-    if (mo->player_ && !AlmostEquals(mo->player_->powers_[kPowerTypeBerserk], 0.0f))
+    if (mo->player_ && !epi::AlmostEquals(mo->player_->powers_[kPowerTypeBerserk], 0.0f))
         damage *= attack->berserk_mul_;
 
     // -KM- 1998/12/21 Use Line attack so bullet puffs are spawned.
@@ -2845,7 +2845,7 @@ void A_EffectTracker(MapObject *object)
     EDGE_DAMAGE_COMPUTE(damage, &tracker->info_->explode_damage_);
 
     float radius = object->info_->explode_radius_;
-    if (AlmostEquals(radius, 0.0f))
+    if (epi::AlmostEquals(radius, 0.0f))
         radius = damage;
 
     RadiusAttack(tracker, object, radius, damage, &tracker->info_->explode_damage_, false);

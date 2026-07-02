@@ -46,7 +46,7 @@ void SetupSkyMatrices(void)
         glPushMatrix();
         glLoadIdentity();
 
-        if (!AlmostEquals(view_rotation, 0.0f))
+        if (!epi::AlmostEquals(view_rotation, 0.0f))
             glRotatef(view_rotation, 0.0f, 0.0f, 1.0f);
         glRotatef(270.0f - epi::DegreesFromBAM(view_vertical_angle), 1.0f, 0.0f, 0.0f);
         glRotatef(epi::DegreesFromBAM(view_angle), 0.0f, 0.0f, 1.0f);
@@ -70,7 +70,7 @@ void SetupSkyMatrices(void)
         glPushMatrix();
         glLoadIdentity();
 
-        if (!AlmostEquals(view_rotation, 0.0f))
+        if (!epi::AlmostEquals(view_rotation, 0.0f))
             glRotatef(-view_rotation, 0.0f, 0.0f, 1.0f);
         glRotatef(270.0f - epi::DegreesFromBAM(view_vertical_angle), 1.0f, 0.0f, 0.0f);
 
@@ -78,7 +78,7 @@ void SetupSkyMatrices(void)
 
         if (sky_ref)
         {
-            if (!AlmostEquals(sky_ref->old_offset.X, sky_ref->offset.X) && !console_active && !paused && !menu_active &&
+            if (!epi::AlmostEquals(sky_ref->old_offset.X, sky_ref->offset.X) && !console_active && !paused && !menu_active &&
                 !time_stop_active && !erraticism_active)
                 rot += epi::BAMFromDegrees(HMM_Lerp(sky_ref->old_offset.X, fractional_tic, sky_ref->offset.X) /
                                            sky_image->ScaledWidth());

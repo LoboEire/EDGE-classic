@@ -23,7 +23,7 @@
 
 #include <limits.h>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "con_main.h"
 #include "dm_defs.h"
 #include "dm_state.h"
@@ -724,7 +724,7 @@ void ScriptPlaySound(RADScriptTrigger *R, void *param)
     R->sound_effects_origin.x = ambient->x;
     R->sound_effects_origin.y = ambient->y;
 
-    if (AlmostEquals(ambient->z, kOnFloorZ))
+    if (epi::AlmostEquals(ambient->z, kOnFloorZ))
         R->sound_effects_origin.z = PointInSubsector(ambient->x, ambient->y)->sector->floor_height;
     else
         R->sound_effects_origin.z = ambient->z;

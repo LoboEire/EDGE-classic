@@ -149,7 +149,7 @@ class GLRenderState : public RenderState
 
     void AlphaFunction(GLenum func, GLfloat ref)
     {
-        if (func == alpha_function_ && AlmostEquals(ref, alpha_function_reference_))
+        if (func == alpha_function_ && epi::AlmostEquals(ref, alpha_function_reference_))
         {
             return;
         }
@@ -396,7 +396,7 @@ class GLRenderState : public RenderState
 
     void LineWidth(float width)
     {
-        if (AlmostEquals(width, line_width_))
+        if (epi::AlmostEquals(width, line_width_))
         {
             return;
         }

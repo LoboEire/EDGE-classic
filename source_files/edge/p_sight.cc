@@ -39,7 +39,7 @@
 
 #include <vector>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "dm_defs.h"
 #include "epi.h"
 #include "epi_doomdefs.h"
@@ -210,7 +210,7 @@ static bool CrossSubsector(Subsector *sub)
 
             // parallel ?
             // -AJA- probably can't happen due to the above Divline checks
-            if (AlmostEquals(den, 0.0f))
+            if (epi::AlmostEquals(den, 0.0f))
                 continue;
 
             num = (divl.x - sight_check.source.x) * divl.delta_y + (sight_check.source.y - divl.y) * divl.delta_x;
@@ -218,11 +218,11 @@ static bool CrossSubsector(Subsector *sub)
             frac = num / den;
 
             // too close to source ?
-            if (AlmostEquals(frac, 0.0f))
+            if (epi::AlmostEquals(frac, 0.0f))
                 continue;
         }
 
-        if (!AlmostEquals(front->floor_height, back->floor_height))
+        if (!epi::AlmostEquals(front->floor_height, back->floor_height))
         {
             float openbottom = HMM_MAX(ld->front_sector->floor_height, ld->back_sector->floor_height);
             slope            = (openbottom - sight_check.source_z) / frac;
@@ -230,7 +230,7 @@ static bool CrossSubsector(Subsector *sub)
                 sight_check.bottom_slope = slope;
         }
 
-        if (!AlmostEquals(front->ceiling_height, back->ceiling_height))
+        if (!epi::AlmostEquals(front->ceiling_height, back->ceiling_height))
         {
             float opentop = HMM_MIN(ld->front_sector->ceiling_height, ld->back_sector->ceiling_height);
             slope         = (opentop - sight_check.source_z) / frac;
@@ -424,7 +424,7 @@ bool CheckSight(MapObject *src, MapObject *dest)
         return false;
 
     // -ACB- 1998/07/20 t2 is Invisible, t1 cannot possibly see it.
-    if (AlmostEquals(dest->visibility_, 0.0f))
+    if (epi::AlmostEquals(dest->visibility_, 0.0f))
         return false;
 
     int n, num_div;

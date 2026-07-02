@@ -34,7 +34,7 @@
 
 #include <vector>
 
-#include "AlmostEquals.h"
+#include "epi_math.h"
 #include "c_local.h"
 #include "epi.h"
 #include "stb_sprintf.h"
@@ -125,7 +125,7 @@ double *RealVM::AccessParam(int p)
     if (p >= functions_[exec_.func]->parm_num)
         RunError("PR_Parameter: p=%d out of range\n", p);
 
-    if (AlmostEquals(exec_.stack[exec_.stack_depth + functions_[exec_.func]->parm_ofs[p]], (double)(-FLT_MAX)))
+    if (epi::AlmostEquals(exec_.stack[exec_.stack_depth + functions_[exec_.func]->parm_ofs[p]], (double)(-FLT_MAX)))
         return nullptr;
     else
         return &exec_.stack[exec_.stack_depth + functions_[exec_.func]->parm_ofs[p]];
@@ -223,7 +223,7 @@ int RealVM::StringConcatFloat(const char *s, double f)
 {
     char buffer[100];
 
-    if (AlmostEquals(f, round(f)))
+    if (epi::AlmostEquals(f, round(f)))
     {
         stbsp_sprintf(buffer, "%1.0f", f);
     }
@@ -239,7 +239,7 @@ int RealVM::StringConcatVector(const char *s, double *v)
 {
     char buffer[200];
 
-    if (AlmostEquals(v[0], round(v[0])) && AlmostEquals(v[1], round(v[1])) && AlmostEquals(v[2], round(v[2])))
+    if (epi::AlmostEquals(v[0], round(v[0])) && epi::AlmostEquals(v[1], round(v[1])) && epi::AlmostEquals(v[2], round(v[2])))
     {
         stbsp_sprintf(buffer, "'%1.0f %1.0f %1.0f'", v[0], v[1], v[2]);
     }
@@ -528,13 +528,13 @@ void RealVM::DoExecute(int fnum)
             break;
 
         case OP_DIV_F:
-            if (AlmostEquals(*b, 0.0))
+            if (epi::AlmostEquals(*b, 0.0))
                 RunError("Division by zero");
             *c = *a / *b;
             break;
 
         case OP_DIV_V:
-            if (AlmostEquals(*b, 0.0))
+            if (epi::AlmostEquals(*b, 0.0))
                 RunError("Division by zero");
             c[0] = a[0] / *b;
             c[1] = a[1] / *b;
@@ -542,7 +542,7 @@ void RealVM::DoExecute(int fnum)
             break;
 
         case OP_MOD_F:
-            if (AlmostEquals(*b, 0.0))
+            if (epi::AlmostEquals(*b, 0.0))
                 RunError("Division by zero");
             else
             {
@@ -570,24 +570,24 @@ void RealVM::DoExecute(int fnum)
 
         case OP_EQ_F:
         case OP_EQ_FNC:
-            *c = AlmostEquals(*a, *b);
+            *c = epi::AlmostEquals(*a, *b);
             break;
         case OP_EQ_V:
-            *c = (AlmostEquals(a[0], b[0])) && (AlmostEquals(a[1], b[1])) && (AlmostEquals(a[2], b[2]));
+            *c = (epi::AlmostEquals(a[0], b[0])) && (epi::AlmostEquals(a[1], b[1])) && (epi::AlmostEquals(a[2], b[2]));
             break;
         case OP_EQ_S:
-            *c = (AlmostEquals(*a, *b)) ? 1 : !strcmp(COAL_REF_STRING((int)*a), COAL_REF_STRING((int)*b));
+            *c = (epi::AlmostEquals(*a, *b)) ? 1 : !strcmp(COAL_REF_STRING((int)*a), COAL_REF_STRING((int)*b));
             break;
 
         case OP_NE_F:
         case OP_NE_FNC:
-            *c = !AlmostEquals(*a, *b);
+            *c = !epi::AlmostEquals(*a, *b);
             break;
         case OP_NE_V:
-            *c = (!AlmostEquals(a[0], b[0])) || (!AlmostEquals(a[1], b[1])) || (!AlmostEquals(a[2], b[2]));
+            *c = (!epi::AlmostEquals(a[0], b[0])) || (!epi::AlmostEquals(a[1], b[1])) || (!epi::AlmostEquals(a[2], b[2]));
             break;
         case OP_NE_S:
-            *c = (AlmostEquals(*a, *b)) ? 0 : !!strcmp(COAL_REF_STRING((int)*a), COAL_REF_STRING((int)*b));
+            *c = (epi::AlmostEquals(*a, *b)) ? 0 : !!strcmp(COAL_REF_STRING((int)*a), COAL_REF_STRING((int)*b));
             break;
 
         case OP_AND:

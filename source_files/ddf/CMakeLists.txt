@@ -29,7 +29,7 @@ add_library(
   ddf_weapon.cc
 )
 
-target_link_libraries(ddf PRIVATE almostequals epi HandmadeMath stb)
+target_link_libraries(ddf PRIVATE epi HandmadeMath stb)
 
 target_include_directories(ddf PRIVATE ../edge ../../libraries/miniaudio)
 
