@@ -9,13 +9,17 @@
 
 ## General Improvements/Changes
 
-- Removed Tracy profiler integration; retained basic rendering status (set debug_fps to '3' to view)
 - Removed "EDGE_CLASSIC" CMake option; all features are unconditionally compiled and included
 - Removed Direct3D11 Sokol target; Sokol builds are now either GLES3 (Emscripten) or Core GL 3.3 (other platforms)
 - Moved Legacy of Rust to a wadfix to reduce startup warnings
 - RTS menus with only 1 option: pressing CANCEL will now behave as if USE was pressed. Both dismiss the menu
 - Ignore missing secret sfx on startup
 - Allow playsim to continue on camera-type Intermission screens
+- Greatly improved node construction speed
+  - Nodes are no longer in XGL3/ZGL3 format; they translate directly to the engine's native format
+  - Nodes are no longer cached as external files and are created on-demand per level instead of for the entire WAD up-front
+- Improved performance of MDL/MD2/MD3 model rendering
+- Improved batching of world geometry/GL calls; potential performance improvement in dense maps
 
 
 ## General Bugfixes
@@ -31,6 +35,9 @@
 - Bouncing objects could very rarely cause an infinite loop
 - Footsteps SFX no longer continue playing when player is dead
 - Suicide cheat was not setting health to zero
+- Fixed potential CTD involving usable/shootable teleport lines when mutliple "spechit" lines were in play
+- Fixed attempt to free garbage pointer when deleting images on shutdown
+- Fixed projectiles occasionally damaging a mobj without exploding (regular projectiles, not tunneling/boring ones for which this is expected)
 
 
 
