@@ -105,46 +105,42 @@ class Image
 
     int source_type_; // image_source_e
 
-    union ImageSource {
-        // case kImageSourceGraphic:
-        // case kImageSourceSprite:
-        // case kImageSourceTXHI:
-        struct
-        {
-            int          lump;
-            char        *packfile_name;
-            bool         is_patch;
-            bool         user_defined;
-            ImageSpecial special;
-        } graphic;
+    struct ImageSourceGraphic
+    {
+        int          lump;
+        char        *packfile_name;
+        bool         is_patch;
+        bool         user_defined;
+        ImageSpecial special;
+    };
 
-        // case kImageSourceFlat:
-        // case kImageSourceRawBlock:
-        struct
-        {
-            int   lump;
-            char *packfile_name;
-        } flat;
+    struct ImageSourceFlat
+    {
+        int   lump;
+        char *packfile_name;
+    };
 
-        // case kImageSourceTexture:
-        struct
-        {
-            struct TextureDefinition *tdef;
-        } texture;
+    struct ImageSourceTexture
+    {
+        struct TextureDefinition *tdef;
+    };
 
-        // case kImageSourceDummy:
-        struct
-        {
-            RGBAColor fg;
-            RGBAColor bg;
-        } dummy;
+    struct ImageSourceDummy
+    {
+        RGBAColor fg;
+        RGBAColor bg;
+    };
 
-        // case kImageSourceUser:
-        struct
-        {
-            ImageDefinition *def;
-        } user;
-    } source_;
+    struct ImageSourceUser
+    {
+        ImageDefinition *def;
+    };
+
+    ImageSourceGraphic source_graphic_;
+    ImageSourceFlat    source_flat_;
+    ImageSourceTexture source_texture_;
+    ImageSourceDummy   source_dummy_;
+    ImageSourceUser    source_user_;
 
     // palette lump, or -1 to use the "GLOBAL" palette
     int source_palette_;

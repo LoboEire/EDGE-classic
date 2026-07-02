@@ -1041,7 +1041,11 @@ static void PickMenuBackdrop(void)
         new_backdrop->opacity_           = menu_image->opacity_;
         new_backdrop->scale_x_           = menu_image->scale_x_;
         new_backdrop->scale_y_           = menu_image->scale_y_;
-        new_backdrop->source_            = menu_image->source_;
+        new_backdrop->source_graphic_    = menu_image->source_graphic_;
+        new_backdrop->source_flat_       = menu_image->source_flat_;
+        new_backdrop->source_texture_    = menu_image->source_texture_;
+        new_backdrop->source_dummy_      = menu_image->source_dummy_;
+        new_backdrop->source_user_       = menu_image->source_user_;
         new_backdrop->source_palette_    = menu_image->source_palette_;
         new_backdrop->source_type_       = menu_image->source_type_;
         new_backdrop->animation_.current = new_backdrop;
@@ -1068,7 +1072,11 @@ static void PickMenuBackdrop(void)
         new_backdrop->opacity_           = loading_image->opacity_;
         new_backdrop->scale_x_           = loading_image->scale_x_;
         new_backdrop->scale_y_           = loading_image->scale_y_;
-        new_backdrop->source_            = loading_image->source_;
+        new_backdrop->source_graphic_    = loading_image->source_graphic_;
+        new_backdrop->source_flat_       = loading_image->source_flat_;
+        new_backdrop->source_texture_    = loading_image->source_texture_;
+        new_backdrop->source_dummy_      = loading_image->source_dummy_;
+        new_backdrop->source_user_       = loading_image->source_user_;
         new_backdrop->source_palette_    = loading_image->source_palette_;
         new_backdrop->source_type_       = loading_image->source_type_;
         new_backdrop->animation_.current = new_backdrop;

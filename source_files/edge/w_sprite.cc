@@ -428,15 +428,15 @@ static void FillSpriteFramesUser()
 
             // Fix offsets if Doom formatted
             // Not sure if this is the 'proper' place to do this yet - Dasho
-            if (images[L]->source_.graphic.is_patch)
+            if (images[L]->source_graphic_.is_patch)
             {
                 // const override
                 Image     *change_img   = (Image *)images[L];
                 epi::File *offset_check = nullptr;
-                if (images[L]->source_.graphic.packfile_name)
-                    offset_check = OpenFileFromPack(images[L]->source_.graphic.packfile_name);
+                if (images[L]->source_graphic_.packfile_name)
+                    offset_check = OpenFileFromPack(images[L]->source_graphic_.packfile_name);
                 else
-                    offset_check = LoadLumpAsFile(images[L]->source_.graphic.lump);
+                    offset_check = LoadLumpAsFile(images[L]->source_graphic_.lump);
 
                 if (!offset_check)
                     FatalError("FillSpriteFramesUser: Error loading %s!\n", images[L]->name_.c_str());
