@@ -31,6 +31,9 @@
 - Bouncing objects could very rarely cause an infinite loop
 - Footsteps SFX no longer continue playing when player is dead
 - Suicide cheat was not setting health to zero
+- Fixed potential CTD involving usable/shootable teleport lines when mutliple "spechit" lines were in play
+- Fixed attempt to free garbage pointer when deleting images on shutdown
+- Fixed projectiles occasionally damaging a mobj without exploding (regular projectiles, not tunneling/boring ones for which this is expected)
 
 
 
