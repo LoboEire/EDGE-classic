@@ -17,6 +17,10 @@
 - Ignore missing secret sfx on startup
 - Allow playsim to continue on camera-type Intermission screens
 
+## Compatibility Fixes
+
+### Boom
+- Fixed an issue where single-activation Displace-type scrollers would continually apply their offset, effectively becoming Accelerate-type scrollers
 
 ## General Bugfixes
 

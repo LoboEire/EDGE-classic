@@ -1529,7 +1529,7 @@ void RunActivePlanes(void)
 
         if (MovePlane(pmov))
         {
-            // Make BOOM scroller effects permanent as this pmov will never be
+            // Make acceleration scroll effects permanent as this pmov will never be
             // recreated
             if (pmov->type->type_ == kPlaneMoverOnce || pmov->type->type_ == kPlaneMoverStairs ||
                 pmov->type->type_ == kPlaneMoverToggle)
@@ -1539,19 +1539,15 @@ void RunActivePlanes(void)
                     if (anim.scroll_sector_reference &&
                         (anim.scroll_sector_reference->ceiling_move == pmov ||
                          anim.scroll_sector_reference->floor_move == pmov) &&
-                        (anim.permanent || anim.scroll_special_reference->scroll_type_ & BoomScrollerTypeAccel))
+                        (anim.scroll_special_reference->scroll_type_ & BoomScrollerTypeAccel))
                     {
                         struct Sector  *sec_ref     = anim.scroll_sector_reference;
                         Sector         *sec         = anim.target;
                         const LineType *special_ref = anim.scroll_special_reference;
                         Line           *line_ref    = anim.scroll_line_reference;
-                        if (!sec || !special_ref || !line_ref ||
-                            !(special_ref->scroll_type_ & BoomScrollerTypeDisplace ||
-                              special_ref->scroll_type_ & BoomScrollerTypeAccel))
+                        if (!sec || !special_ref || !line_ref)
                             continue;
-                        float heightref =
-                            (special_ref->scroll_type_ & BoomScrollerTypeDisplace ? anim.last_height
-                                                                                  : sec_ref->original_height);
+                        float heightref = sec_ref->original_height;
                         float sy = line_ref->length / 32.0f * line_ref->delta_y / line_ref->length *
                                    ((sec_ref->floor_height + sec_ref->ceiling_height) - heightref);
                         float sx = line_ref->length / 32.0f * line_ref->delta_x / line_ref->length *
@@ -1584,7 +1580,7 @@ void RunActivePlanes(void)
                     if (anim.scroll_sector_reference &&
                         (anim.scroll_sector_reference->ceiling_move == pmov ||
                          anim.scroll_sector_reference->floor_move == pmov) &&
-                        (anim.permanent || anim.scroll_special_reference->scroll_type_ & BoomScrollerTypeAccel))
+                        (anim.scroll_special_reference->scroll_type_ & BoomScrollerTypeAccel))
                     {
                         struct Sector  *sec_ref     = anim.scroll_sector_reference;
                         Line           *ld          = anim.target;
@@ -1598,9 +1594,7 @@ void RunActivePlanes(void)
                         {
                             float tdx       = anim.dynamic_delta_x;
                             float tdy       = anim.dynamic_delta_y;
-                            float heightref = special_ref->scroll_type_ & BoomScrollerTypeDisplace
-                                                  ? anim.last_height
-                                                  : sec_ref->original_height;
+                            float heightref = sec_ref->original_height;
                             float sy        = tdy * ((sec_ref->floor_height + sec_ref->ceiling_height) - heightref);
                             float sx        = tdx * ((sec_ref->floor_height + sec_ref->ceiling_height) - heightref);
                             if (ld->side[0])
@@ -1656,9 +1650,7 @@ void RunActivePlanes(void)
                         {
                             float x_speed   = anim.side_0_x_offset_speed;
                             float y_speed   = anim.side_0_y_offset_speed;
-                            float heightref = special_ref->scroll_type_ & BoomScrollerTypeDisplace
-                                                  ? anim.last_height
-                                                  : sec_ref->original_height;
+                            float heightref = sec_ref->original_height;
                             float sy        = x_speed * ((sec_ref->floor_height + sec_ref->ceiling_height) - heightref);
                             float sx        = y_speed * ((sec_ref->floor_height + sec_ref->ceiling_height) - heightref);
                             if (ld->side[0])
