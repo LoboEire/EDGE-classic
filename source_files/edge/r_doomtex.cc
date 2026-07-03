@@ -162,15 +162,15 @@ static ImageData *ReadFlatAsEpiBlock(Image *rim)
 
     const uint8_t *src = nullptr;
 
-    if (rim->source_.graphic.packfile_name)
+    if (rim->source_graphic_.packfile_name)
     {
-        epi::File *f = OpenFileFromPack(rim->source_.graphic.packfile_name);
+        epi::File *f = OpenFileFromPack(rim->source_graphic_.packfile_name);
         if (f)
             src = (const uint8_t *)f->LoadIntoMemory();
         delete f;
     }
     else
-        src = (const uint8_t *)LoadLumpIntoMemory(rim->source_.flat.lump);
+        src = (const uint8_t *)LoadLumpIntoMemory(rim->source_flat_.lump);
 
     if (!src)
         FatalError("ReadFlatAsEpiBlock: Failed to load %s!\n", rim->name_.c_str());
@@ -208,7 +208,7 @@ static ImageData *ReadTextureAsEpiBlock(Image *rim)
 {
     EPI_ASSERT(rim->source_type_ == kImageSourceTexture);
 
-    TextureDefinition *tdef = rim->source_.texture.tdef;
+    TextureDefinition *tdef = rim->source_texture_.tdef;
     EPI_ASSERT(tdef);
 
     int tw = rim->width_;
@@ -282,11 +282,11 @@ static ImageData *ReadPatchAsEpiBlock(Image *rim)
     EPI_ASSERT(rim->source_type_ == kImageSourceGraphic || rim->source_type_ == kImageSourceSprite ||
                rim->source_type_ == kImageSourceTXHI);
 
-    int         lump          = rim->source_.graphic.lump;
-    const char *packfile_name = rim->source_.graphic.packfile_name;
+    int         lump          = rim->source_graphic_.lump;
+    const char *packfile_name = rim->source_graphic_.packfile_name;
 
     // handle PNG/JPEG/TGA images
-    if (!rim->source_.graphic.is_patch)
+    if (!rim->source_graphic_.is_patch)
     {
         epi::File *f;
 
@@ -393,12 +393,12 @@ static ImageData *ReadDummyAsEpiBlock(Image *rim)
 
             if (dummy_graphic[(kDummyImageSize - 1 - y) * kDummyImageSize + x])
             {
-                *dest_pix++ = (rim->source_.dummy.fg & 0xFF0000) >> 16;
-                *dest_pix++ = (rim->source_.dummy.fg & 0x00FF00) >> 8;
-                *dest_pix++ = (rim->source_.dummy.fg & 0x0000FF);
+                *dest_pix++ = (rim->source_dummy_.fg & 0xFF0000) >> 16;
+                *dest_pix++ = (rim->source_dummy_.fg & 0x00FF00) >> 8;
+                *dest_pix++ = (rim->source_dummy_.fg & 0x0000FF);
                 *dest_pix++ = 255;
             }
-            else if (rim->source_.dummy.bg == kTransparentPixelIndex)
+            else if (rim->source_dummy_.bg == kTransparentPixelIndex)
             {
                 *dest_pix++ = 0;
                 *dest_pix++ = 0;
@@ -407,9 +407,9 @@ static ImageData *ReadDummyAsEpiBlock(Image *rim)
             }
             else
             {
-                *dest_pix++ = (rim->source_.dummy.bg & 0xFF0000) >> 16;
-                *dest_pix++ = (rim->source_.dummy.bg & 0x00FF00) >> 8;
-                *dest_pix++ = (rim->source_.dummy.bg & 0x0000FF);
+                *dest_pix++ = (rim->source_dummy_.bg & 0xFF0000) >> 16;
+                *dest_pix++ = (rim->source_dummy_.bg & 0x00FF00) >> 8;
+                *dest_pix++ = (rim->source_dummy_.bg & 0x0000FF);
                 *dest_pix++ = 255;
             }
         }
@@ -502,7 +502,7 @@ static ImageData *ReadUserAsEpiBlock(Image *rim)
 {
     EPI_ASSERT(rim->source_type_ == kImageSourceUser);
 
-    ImageDefinition *def = rim->source_.user.def;
+    ImageDefinition *def = rim->source_user_.def;
 
     switch (def->type_)
     {

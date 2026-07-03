@@ -2369,7 +2369,7 @@ bool DisableStockSkybox(const char *ActualSky)
     {
         if (tempImage->source_type_ == kImageSourceTexture) // Normal doom format sky
         {
-            filenum = GetDataFileIndexForLump(tempImage->source_.texture.tdef->patches->patch);
+            filenum = GetDataFileIndexForLump(tempImage->source_texture_.tdef->patches->patch);
         }
         else if (tempImage->source_type_ == kImageSourceUser) // texture from images.ddf
         {
