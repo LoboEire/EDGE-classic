@@ -65,12 +65,12 @@ foreach(line IN LISTS LDD_LINES)
   endif()
 endforeach()
 
-file(WRITE "${APPDIR}/edge-classic" [=[#!/bin/sh
+file(WRITE "${APPDIR}/AppRun" [=[#!/bin/sh
 HERE="$(dirname "$(readlink -f "$0")")"
 export LD_LIBRARY_PATH="$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 exec "$HERE/usr/bin/edge-classic" "-game" "$HERE/usr/share/edge-classic" "$@"
 ]=])
-file(CHMOD "${APPDIR}/edge-classic"
+file(CHMOD "${APPDIR}/AppRun"
   PERMISSIONS
     OWNER_READ OWNER_WRITE OWNER_EXECUTE
     GROUP_READ GROUP_EXECUTE
@@ -122,6 +122,36 @@ else()
 endif()
 
 execute_process(
-  COMMAND ${CMAKE_COMMAND} -E tar "cf" "edge-classic.zip" --format=zip "edge-classic"
-  WORKING_DIRECTORY "${BINARY_DIR}"
+  COMMAND uname -m
+  OUTPUT_VARIABLE HOST_ARCH
+  OUTPUT_STRIP_TRAILING_WHITESPACE
 )
+
+set(APPIMAGETOOL "${BINARY_DIR}/appimagetool-${HOST_ARCH}.AppImage")
+if (NOT EXISTS "${APPIMAGETOOL}")
+  file(DOWNLOAD
+    "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${HOST_ARCH}.AppImage"
+    "${APPIMAGETOOL}"
+    STATUS APPIMAGETOOL_DOWNLOAD_STATUS
+  )
+  list(GET APPIMAGETOOL_DOWNLOAD_STATUS 0 APPIMAGETOOL_DOWNLOAD_CODE)
+  if (NOT APPIMAGETOOL_DOWNLOAD_CODE EQUAL 0)
+    file(REMOVE "${APPIMAGETOOL}")
+    message(FATAL_ERROR "Failed to download appimagetool: ${APPIMAGETOOL_DOWNLOAD_STATUS}")
+  endif()
+  file(CHMOD "${APPIMAGETOOL}"
+    PERMISSIONS
+      OWNER_READ OWNER_WRITE OWNER_EXECUTE
+      GROUP_READ GROUP_EXECUTE
+      WORLD_READ WORLD_EXECUTE
+  )
+endif()
+
+execute_process(
+  COMMAND ${CMAKE_COMMAND} -E env "ARCH=${HOST_ARCH}"
+    "${APPIMAGETOOL}" --appimage-extract-and-run "${APPDIR}" "${BINARY_DIR}/edge-classic-${HOST_ARCH}.AppImage"
+  RESULT_VARIABLE APPIMAGETOOL_RESULT
+)
+if (NOT APPIMAGETOOL_RESULT EQUAL 0)
+  message(FATAL_ERROR "appimagetool failed with exit code ${APPIMAGETOOL_RESULT}")
+endif()
