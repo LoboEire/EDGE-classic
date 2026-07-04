@@ -38,6 +38,7 @@
 - Fixed potential CTD involving usable/shootable teleport lines when mutliple "spechit" lines were in play
 - Fixed attempt to free garbage pointer when deleting images on shutdown
 - Fixed projectiles occasionally damaging a mobj without exploding (regular projectiles, not tunneling/boring ones for which this is expected)
+- Fixed Finale cast drawer not display repaletted versions of monsters
 
 
 
