@@ -290,14 +290,14 @@ if (COPY_FILES)
 endif()
 
 if (UNIX AND NOT EMSCRIPTEN)
-  add_custom_target(appdir
+  add_custom_target(appimage
     DEPENDS edge-classic GenerateEPKS
     COMMAND ${CMAKE_COMMAND}
       -D "SOURCE_DIR=${CMAKE_SOURCE_DIR}"
       -D "BINARY_DIR=${CMAKE_BINARY_DIR}"
       -D "TARGET_FILE=$<TARGET_FILE:edge-classic>"
-      -P "${CMAKE_SOURCE_DIR}/cmake/GenerateAppDir.cmake"
-    COMMENT "Assembling AppDir at ${CMAKE_BINARY_DIR}/edge-classic"
+      -P "${CMAKE_SOURCE_DIR}/cmake/GenerateAppImage.cmake"
+    COMMENT "Building AppImage at ${CMAKE_BINARY_DIR}"
     VERBATIM
   )
 endif()

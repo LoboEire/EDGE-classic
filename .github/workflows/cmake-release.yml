@@ -92,9 +92,9 @@ jobs:
       - name: Configure CMake
         run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DEDGE_SOKOL_GL=ON
       - name: Build
-        run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --target appdir
+        run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --target appimage
       - uses: actions/upload-artifact@v7
         with:
           name: edge-classic-linux
-          path: ${{github.workspace}}/build/edge-classic.zip
+          path: ${{github.workspace}}/build/edge-classic-x86_64.AppImage
           retention-days: ${{env.RETENTION_DAYS}}

@@ -857,8 +857,10 @@ static void CastDrawer(void)
     width *= scale_x;
     height *= scale_y;
 
-    HUDRawImage(pos_x - offset_x, pos_y + offset_y, pos_x - offset_x + width, pos_y + offset_y + height, image,
-                flip ? 1.0f : 0, 0, flip ? 0 : 1.0f, 1.0f, 1.0f, kRGBANoValue);
+    GLuint tex_id = ImageCache(image, false, cast_order->palremap_);
+
+    HUDRawFromTexID(pos_x - offset_x, pos_y + offset_y, pos_x - offset_x + width, pos_y + offset_y + height, tex_id,
+        (ImageOpacity)image->opacity_, flip ? 1.0f : 0, 0, flip ? 0 : 1.0f, 1.0f, 1.0f);
 }
 
 //

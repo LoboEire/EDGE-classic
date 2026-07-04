@@ -562,7 +562,6 @@ struct SectorAnimation
     HMM_Vec2        floor_scroll             = {{0, 0}};
     HMM_Vec2        ceil_scroll              = {{0, 0}};
     HMM_Vec3        push                     = {{0, 0, 0}};
-    bool            permanent                = false;
     float           last_height              = 0.0f;
 };
 
@@ -580,7 +579,6 @@ struct LineAnimation
     float           side_0_y_offset_speed    = 0.0;
     float           dynamic_delta_x          = 0.0;
     float           dynamic_delta_y          = 0.0;
-    bool            permanent                = false;
     float           last_height              = 0.0f;
 };
 
