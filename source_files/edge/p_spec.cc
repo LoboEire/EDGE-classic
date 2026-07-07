@@ -686,14 +686,6 @@ static void P_LineEffect(Line *target, Line *source, const LineType *special)
                 anim.scroll_line_reference    = source;
                 anim.side_0_x_offset_speed    = -source->side[0]->middle.offset.X / 8.0;
                 anim.side_0_y_offset_speed    = source->side[0]->middle.offset.Y / 8.0;
-                for (int i = 0; i < total_level_lines; i++)
-                {
-                    if (level_lines[i].tag == source->side[0]->sector->tag)
-                    {
-                        if (!level_lines[i].special || level_lines[i].special->count_ == 1)
-                            anim.permanent = true;
-                    }
-                }
                 anim.last_height = anim.scroll_sector_reference->original_height;
             }
         }
@@ -753,14 +745,6 @@ static void P_LineEffect(Line *target, Line *source, const LineType *special)
                     anim.scroll_line_reference    = source;
                     anim.dynamic_delta_x += x;
                     anim.dynamic_delta_y += y;
-                    for (int i = 0; i < total_level_lines; i++)
-                    {
-                        if (level_lines[i].tag == source->side[0]->sector->tag)
-                        {
-                            if (!level_lines[i].special || level_lines[i].special->count_ == 1)
-                                anim.permanent = true;
-                        }
-                    }
                     anim.last_height = anim.scroll_sector_reference->original_height;
                 }
             }
@@ -898,14 +882,6 @@ static void SectorEffect(Sector *target, Line *source, const LineType *special)
                 anim.scroll_sector_reference  = source->side[0]->sector;
                 anim.scroll_special_reference = special;
                 anim.scroll_line_reference    = source;
-                for (int i = 0; i < total_level_lines; i++)
-                {
-                    if (level_lines[i].tag == source->side[0]->sector->tag)
-                    {
-                        if (!level_lines[i].special || level_lines[i].special->count_ == 1)
-                            anim.permanent = true;
-                    }
-                }
                 anim.last_height = anim.scroll_sector_reference->original_height;
             }
         }
