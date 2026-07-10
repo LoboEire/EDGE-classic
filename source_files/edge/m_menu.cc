@@ -3150,6 +3150,19 @@ void MenuInitialize(void)
         ReadThisMenuDefinition1.y             = 165;
         ReadMenu1[0].select_function          = MenuFinishReadThis;
     }
+    else // neither exist...standalone game, etc
+    {
+        menu_read_this[0]           = nullptr;
+        menu_read_this[1]           = nullptr;
+        MainMenu[kMainMenuReadThis] = MainMenu[kMainMenuQuitDoom];
+        MainMenuDefinition.total_items--;
+        MainMenuDefinition.y += 8;                           // FIXME
+        SkillMenuDefinition.previous_menu     = &MainMenuDefinition;
+        ReadThisMenuDefinition1.draw_function = nullptr;
+        ReadThisMenuDefinition1.x             = 330;
+        ReadThisMenuDefinition1.y             = 165;
+        ReadMenu1[0].select_function          = nullptr;
+    }
 
     // Lobo 2022: Use new sfx definitions so we don't have to share names with
     // normal doom sfx.
