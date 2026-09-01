@@ -193,7 +193,7 @@ void Scanner::CheckForWhitespace()
             if (cur == '\r' && next == '\n')
                 scan_position_++;
             IncrementLine();
-            CheckForMeta();
+            //CheckForMeta();
         }
         else if (cur == '/' && comment == 0)
         {
@@ -202,13 +202,9 @@ void Scanner::CheckForWhitespace()
             case '/':
                 comment = 1;
                 break;
-            /*case '*':
-            {
-                char next2 = scan_position_+2 < length ? data[scan_position_+2] : 0;
-                if(next2 != ' ')
-                    comment = 2;
+            case '*':
+                comment = 2;
                 break;
-            }*/
             default:
                 return;
             }
